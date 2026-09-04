@@ -346,7 +346,7 @@ self.onmessage=async e=>{
    ============================================================ */
 
 /* 每次改動都要更新，診斷記錄會印出來，用來確認手機拿到的是不是新版 */
-const APP_VERSION='v6 (2026-09-04)　逐段開檔記錄／空間預估／雲端檔案偵測';
+const APP_VERSION='v7 (2026-09-04)　重新編碼時聲音直接複製，不經過解碼器';
 
 const FONT='system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
 const FPS=30;
@@ -1108,7 +1108,11 @@ const xport={
       dbg.add(`    影像 ${it.vcfg.codec}  ${it.vcfg.codedWidth}x${it.vcfg.codedHeight}  旋轉${rot}°  ${fps}fps  可解碼=${vOk}`);
       const vd=toBytes(it.vcfg.description);
       dbg.add(`    描述位元組 ${vd?(vd.length+' bytes  開頭 '+[...vd.slice(0,8)].map(b=>b.toString(16).padStart(2,'0')).join(' ')):'無'}`);
-      if(it.acfg)dbg.add(`    聲音 ${it.acfg.codec}  ${it.acfg.sampleRate}Hz  ${it.acfg.numberOfChannels}ch  可解碼=${aOk}`);
+      if(it.acfg){
+        const ad=toBytes(it.acfg.description);
+        dbg.add(`    聲音 ${it.acfg.codec}  ${it.acfg.sampleRate}Hz  ${it.acfg.numberOfChannels}ch  可解碼=${aOk}`
+          +`  描述=${ad?(ad.length+'B '+[...ad.slice(0,6)].map(b=>b.toString(16).padStart(2,'0')).join(' ')):'無'}`);
+      }
       else dbg.add(`    聲音 無`);
       dbg.add(`    裁切 ${c.trimStart.toFixed(2)}s → ${c.trimEnd.toFixed(2)}s（共 ${clipLen(c).toFixed(2)}s）`);
 
@@ -1247,10 +1251,52 @@ const xport={
   },
 
   /* ---------- 模式二：重新編碼，字幕燒進畫面 ---------- */
+  /* 影像要重編所以非解碼不可，但聲音不用。只要各段聲音規格一致，
+     就直接把原始封包搬過去，完全不碰解碼器，也不會有二次壓縮。 */
+  audioPlan(list){
+    if(!list.some(x=>x.at))return 'none';
+    if(!list.every(x=>x.at&&x.acfg))return 'decode';
+    const a=list[0].acfg;
+    for(const it of list){
+      const b=it.acfg;
+      if(shortCodec(a.codec)!==shortCodec(b.codec))return 'decode';
+      if(a.sampleRate!==b.sampleRate||a.numberOfChannels!==b.numberOfChannels)return 'decode';
+      if(!sameBytes(a.description,b.description))return 'decode';
+    }
+    return 'copy';
+  },
+
   /* 聲音先跑：它便宜、又是最容易失敗的一步，失敗要在花七秒編影像之前就知道 */
-  async addClipAudio(lib,it,i,asrc){
+  async addClipAudio(lib,it,i,au){
     const c=it.clip,len=clipLen(c);
-    if(!asrc)return;
+    if(!au||!au.src)return;
+    const asrc=au.src;
+
+    /* 直接複製：不解碼、不重編 */
+    if(au.mode==='copy'&&it.at){
+      try{
+        const asink=new lib.EncodedPacketSink(it.at);
+        let ap=await asink.getKeyPacket(c.trimStart);
+        if(!ap)ap=await asink.getKeyPacket(0);
+        if(!ap)throw new Error('讀不到聲音封包');
+        const aStart=ap.timestamp;
+        let n=0;
+        while(ap&&ap.timestamp<c.trimEnd){
+          if(xport.cancel)throw new Error('已取消');
+          await asrc.add(ap.clone({timestamp:au.base+(ap.timestamp-aStart)}),
+                         au.first?{decoderConfig:it.acfg}:undefined);
+          au.first=false;n++;
+          ap=await asink.getNextPacket(ap);
+        }
+        dbg.add(`[${i+1}] 聲音直接複製 ${n} 個封包（未解碼、未重編）`);
+        return;
+      }catch(e){
+        if(xport.cancel)throw e;
+        dbg.add(`[${i+1}] 聲音複製失敗：${e.name||''} ${e.message}`);
+        throw e;
+      }
+    }
+
     if(it.at){
       try{
         let an=0;
@@ -1299,14 +1345,20 @@ const xport={
     });
     out.addVideoTrack(vsrc);
 
-    const anyAudio=list.some(x=>x.at);
-    let asrc=null;
-    if(anyAudio){
+    const plan=xport.audioPlan(list);
+    let au=null;
+    if(plan==='copy'){
+      const ac=shortCodec(list[0].acfg.codec);
+      dbg.add('聲音處理方式：直接複製原始封包（'+ac+'），不經過解碼器');
+      au={src:new lib.EncodedAudioPacketSource(ac),mode:'copy',first:true,base:0};
+      out.addAudioTrack(au.src);
+    }else if(plan==='decode'){
       const acodec=await lib.getFirstEncodableAudioCodec(format.getSupportedAudioCodecs());
-      dbg.add('聲音編碼器 '+(acodec||'找不到，成品會沒有聲音'));
+      dbg.add('聲音處理方式：各段規格不一致，需要解碼重編（'+(acodec||'找不到編碼器')+'）');
       if(acodec){
-        asrc=new lib.AudioBufferSource({codec:acodec,quality:new lib.Quality('high')});
-        out.addAudioTrack(asrc);
+        au={src:new lib.AudioBufferSource({codec:acodec,quality:new lib.Quality('high')}),
+            mode:'decode',first:true,base:0};
+        out.addAudioTrack(au.src);
       }
     }else dbg.add('所有片段都沒有聲音軌');
     await out.start();
@@ -1318,7 +1370,8 @@ const xport={
       if(xport.cancel)throw new Error('已取消');
       const it=list[i],c=it.clip,len=clipLen(c);
 
-      await xport.addClipAudio(lib,it,i,asrc);
+      if(au)au.base=base;
+      await xport.addClipAudio(lib,it,i,au);
 
       dbg.add(`[${i+1}] 開始解碼影像 ${c.trimStart.toFixed(2)}s→${c.trimEnd.toFixed(2)}s，輸出位移 ${base.toFixed(2)}s`);
       const tStart=performance.now();
@@ -1352,7 +1405,7 @@ const xport={
       base+=len;
     }
 
-    vsrc.close();if(asrc)asrc.close();
+    vsrc.close();if(au&&au.src)au.src.close();
     dbg.add('編碼完成，收尾中…');
     await out.finalize();
     return {snapped:0};

@@ -69,6 +69,8 @@ python3 -m http.server 8080
 
 **快速接片的裁切點會對齊關鍵影格。** 因為完全沒有重新編碼，只能從關鍵影格開始切，實際起點可能比你設定的早一兩秒。匯出後會告訴你有幾段被移動過。需要精準裁切就用重新編碼模式。
 
+**重新編碼模式不會碰聲音解碼器。** 影像非重編不可，但聲音只要各段規格一致就直接複製原始封包（`EncodedAudioPacketSource`），完全繞過解碼器，也沒有二次壓縮。實測 Android 上這台裝置的 AAC 解碼器建不起來，靠這條路才留得住聲音。規格不一致時才退回解碼重編。
+
 **聲音解碼有可能失敗。** 實測在 Android 上遇過 `canDecode()` 回報 true、但 WebCodecs 的 `AudioDecoder` 建立時仍丟 `EncodingError: Decoding error.`。重新編碼模式因此採三層退路：WebCodecs → Web Audio 的 `decodeAudioData` → 等長靜音。任何一層成功就繼續，不會讓整趟匯出白跑，實際走到哪一層記錄裡都寫得清楚。
 
 **素材必須真的在手機本機。** 從 Google 相簿、OneDrive 之類的雲端相簿選檔案時，拿到的可能只是佔位參照，讀取時會丟 `TypeError: network error`。開檔前會先試讀開頭幾十 KB，讀不到就直接指名是哪一段，不會跑到一半才失敗。
