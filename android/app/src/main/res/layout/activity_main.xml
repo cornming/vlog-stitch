@@ -1,65 +1,159 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:padding="14dp"
+    android:background="@color/ink"
     android:fitsSystemWindows="true">
 
-    <TextView android:id="@+id/count"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:textSize="15sp" android:textStyle="bold" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
+        android:orientation="vertical">
 
-    <TextView android:id="@+id/empty"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:paddingTop="10dp" android:paddingBottom="10dp"
-        android:text="@string/empty_hint" android:textSize="14sp" />
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="@color/ink"
+            app:title="@string/app_name"
+            app:subtitle="@string/tagline"
+            app:titleTextColor="@color/text"
+            app:subtitleTextColor="@color/dim" />
 
-    <androidx.recyclerview.widget.RecyclerView android:id="@+id/list"
-        android:layout_width="match_parent" android:layout_height="0dp"
-        android:layout_weight="1" android:paddingTop="6dp" />
+        <ScrollView android:layout_width="match_parent" android:layout_height="0dp"
+            android:layout_weight="1" android:clipToPadding="false"
+            android:paddingStart="14dp" android:paddingEnd="14dp" android:paddingBottom="14dp">
 
-    <RadioGroup android:id="@+id/modeGroup"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:layout_marginTop="4dp">
-        <RadioButton android:id="@+id/modeAuto" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:checked="true"
-            android:text="@string/mode_auto" android:textSize="13sp" />
-        <RadioButton android:id="@+id/modeMux" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:layout_marginStart="8dp"
-            android:text="@string/mode_mux" android:textSize="13sp" />
-        <RadioButton android:id="@+id/modeEnc" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:layout_marginStart="8dp"
-            android:text="@string/mode_enc" android:textSize="13sp" />
-    </RadioGroup>
+            <LinearLayout android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical">
 
-    <ProgressBar android:id="@+id/progress"
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:max="100" />
+                <!-- 成品概觀：長度 + 依比例分段的時間軸 -->
+                <com.google.android.material.card.MaterialCardView style="@style/Card"
+                    android:layout_width="match_parent" android:layout_height="wrap_content">
+                    <LinearLayout android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:orientation="vertical">
+                        <LinearLayout android:layout_width="match_parent"
+                            android:layout_height="wrap_content" android:orientation="horizontal"
+                            android:baselineAligned="true">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                                android:layout_weight="1" style="@style/Label"
+                                android:text="@string/total_length" />
+                            <TextView android:id="@+id/total"
+                                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:textColor="@color/text" android:textSize="19sp"
+                                android:textStyle="bold" android:text="0:00" />
+                        </LinearLayout>
+                        <LinearLayout android:id="@+id/track"
+                            android:layout_width="match_parent" android:layout_height="26dp"
+                            android:layout_marginTop="9dp" android:orientation="horizontal"
+                            android:background="@color/panel2" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
-    <TextView android:id="@+id/status"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:paddingTop="4dp" android:textSize="13sp" />
+                <!-- 片段清單 -->
+                <com.google.android.material.card.MaterialCardView style="@style/Card"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp">
+                    <LinearLayout android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:orientation="vertical">
+                        <TextView android:id="@+id/count"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:textColor="@color/text" android:textSize="15sp"
+                            android:textStyle="bold" />
+                        <TextView android:id="@+id/empty"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:paddingTop="6dp" style="@style/Label"
+                            android:lineSpacingMultiplier="1.35"
+                            android:text="@string/empty_hint" />
+                        <androidx.recyclerview.widget.RecyclerView android:id="@+id/list"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:paddingTop="4dp" android:nestedScrollingEnabled="false" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
-    <ScrollView android:id="@+id/logScroll"
-        android:layout_width="match_parent" android:layout_height="130dp"
-        android:layout_marginTop="6dp" android:background="#11000000" android:padding="8dp">
-        <TextView android:id="@+id/log"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:fontFamily="monospace" android:textSize="11sp" />
-    </ScrollView>
+                <!-- 匯出方式 -->
+                <com.google.android.material.card.MaterialCardView style="@style/Card"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp">
+                    <LinearLayout android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:orientation="vertical">
+                        <TextView android:layout_width="match_parent"
+                            android:layout_height="wrap_content" style="@style/Label"
+                            android:text="@string/export_mode" />
+                        <com.google.android.material.chip.ChipGroup android:id="@+id/modeGroup"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            app:singleSelection="true" app:selectionRequired="true">
+                            <com.google.android.material.chip.Chip android:id="@+id/modeAuto"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:checked="true" android:text="@string/mode_auto" />
+                            <com.google.android.material.chip.Chip android:id="@+id/modeMux"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="@string/mode_mux" />
+                            <com.google.android.material.chip.Chip android:id="@+id/modeEnc"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="@string/mode_enc" />
+                        </com.google.android.material.chip.ChipGroup>
+                        <TextView android:id="@+id/modeHint"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp" style="@style/Label"
+                            android:lineSpacingMultiplier="1.35" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:layout_marginTop="8dp">
-        <Button android:id="@+id/btnPick"
-            android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:text="@string/pick" />
-        <Button android:id="@+id/btnExport"
-            android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:layout_marginStart="8dp"
-            android:text="@string/export" />
+                <!-- 進度與記錄 -->
+                <com.google.android.material.card.MaterialCardView style="@style/Card"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp">
+                    <LinearLayout android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:orientation="vertical">
+                        <com.google.android.material.progressindicator.LinearProgressIndicator
+                            android:id="@+id/progress"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            app:trackCornerRadius="4dp" app:trackThickness="7dp"
+                            android:max="100" android:progress="0" />
+                        <TextView android:id="@+id/status"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:paddingTop="9dp" android:textSize="13sp"
+                            android:textColor="@color/dim" android:text="@string/ready" />
+                        <TextView android:id="@+id/logToggle"
+                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:paddingTop="10dp" android:paddingBottom="4dp"
+                            android:textColor="@color/accent" android:textSize="13sp"
+                            android:text="@string/show_log" />
+                        <ScrollView android:id="@+id/logScroll"
+                            android:layout_width="match_parent" android:layout_height="180dp"
+                            android:visibility="gone" android:background="@color/ink"
+                            android:padding="10dp">
+                            <TextView android:id="@+id/log"
+                                android:layout_width="match_parent" android:layout_height="wrap_content"
+                                android:fontFamily="monospace" android:textSize="11sp"
+                                android:textColor="@color/dim" android:lineSpacingMultiplier="1.4" />
+                        </ScrollView>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <TextView android:id="@+id/version"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:gravity="center" android:paddingTop="12dp"
+                    android:textColor="@color/dim" android:textSize="11sp" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- 底部操作列 -->
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:background="@color/panel"
+            android:padding="12dp" android:elevation="8dp">
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnPick"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp" android:layout_height="52dp"
+                android:layout_weight="1" android:text="@string/pick" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnExport"
+                android:layout_width="0dp" android:layout_height="52dp"
+                android:layout_weight="1" android:layout_marginStart="10dp"
+                android:text="@string/export" />
+        </LinearLayout>
     </LinearLayout>
-
-    <TextView android:id="@+id/version"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:gravity="center" android:paddingTop="6dp" android:textSize="11sp" />
-</LinearLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

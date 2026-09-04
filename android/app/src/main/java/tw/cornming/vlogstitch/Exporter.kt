@@ -37,6 +37,7 @@ class Exporter(private val context: Context) {
 
     interface Callback {
         fun onProgress(percent: Int)
+        fun onSaving()
         fun onLog(line: String)
         fun onDone(outputUri: Uri?, file: File, millis: Long)
         fun onError(message: String)
@@ -140,8 +141,13 @@ class Exporter(private val context: Context) {
                 cb.onLog("完成：長度 ${result.durationMs}ms，大小 ${result.fileSizeBytes} bytes")
                 cb.onLog("影像編碼器 " + (result.videoEncoderName ?: "無（轉封裝）") +
                     "，聲音編碼器 " + (result.audioEncoderName ?: "無（轉封裝）"))
-                val uri = saveToGallery(outFile, "vlog-$stamp.mp4", cb)
-                cb.onDone(uri, outFile, System.currentTimeMillis() - startedAt)
+                // 成品可能好幾 GB，複製到相簿一定要離開主執行緒，否則會 ANR
+                cb.onSaving()
+                Thread {
+                    val uri = saveToGallery(outFile, "vlog-$stamp.mp4", cb)
+                    val took = System.currentTimeMillis() - startedAt
+                    main.post { cb.onDone(uri, outFile, took) }
+                }.start()
             }
 
             override fun onError(

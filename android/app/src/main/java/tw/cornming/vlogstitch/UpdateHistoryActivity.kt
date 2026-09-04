@@ -16,7 +16,9 @@ class UpdateHistoryActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityUpdatesBinding.inflate(layoutInflater)
         setContentView(b.root)
+        setSupportActionBar(b.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        b.toolbar.setNavigationOnClickListener { finish() }
 
         b.loading.visibility = View.VISIBLE
         lifecycleScope.launch {

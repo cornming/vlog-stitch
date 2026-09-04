@@ -21,6 +21,17 @@
     <string name="download">下載更新</string>
     <string name="later">稍後再說</string>
     <string name="no_releases">還沒有任何發佈紀錄，或是連不上網路。</string>
+    <string name="tagline">把幾段影片接成一支</string>
+    <string name="total_length">成品長度</string>
+    <string name="export_mode">匯出方式</string>
+    <string name="ready">選好影片後按匯出。</string>
+    <string name="show_log">顯示詳細記錄</string>
+    <string name="hide_log">收起記錄</string>
+    <string name="saving">存到相簿中，檔案大要等一下…</string>
+    <string name="hint_auto">先試著直接轉封裝，不重新編碼。同一支手機拍的素材通常都能走這條，幾十秒就好，畫質零損失，HDR 也原樣保留。失敗才自動改用重新編碼。</string>
+    <string name="hint_mux">只做轉封裝，不接受退路。片段規格不一致就直接失敗，適合用來確認到底能不能免重編。</string>
+    <string name="hint_enc">強制重新編碼，並把 HDR 色調對應成 SDR、輸出 H.264。慢很多，畫質會損失，只有規格混雜時才需要。</string>
+    <string name="downloading">開始下載更新，完成後會跳出安裝畫面</string>
     <string name="mode_auto">自動</string>
     <string name="mode_mux">只轉封裝</string>
     <string name="mode_enc">重編轉SDR</string>
