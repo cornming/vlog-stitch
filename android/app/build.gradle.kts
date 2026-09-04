@@ -25,12 +25,18 @@ android {
      */
     signingConfigs {
         create("release") {
+            // 注意：workflow 傳未設定的 secret 會得到空字串而不是 null，
+            // 所以要用 isNullOrBlank 判斷，只用 ?: 會拿到空密碼而建置失敗。
+            fun env(name: String, fallback: String): String {
+                val v = System.getenv(name)
+                return if (v.isNullOrBlank()) fallback else v
+            }
             val envPath = System.getenv("RELEASE_KEYSTORE_PATH")
             storeFile = if (envPath.isNullOrBlank())
                 rootProject.file("keystore/vlog-stitch.jks") else file(envPath)
-            storePassword = System.getenv("RELEASE_STORE_PASSWORD") ?: "vlogstitch"
-            keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "vlogstitch"
-            keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: "vlogstitch"
+            storePassword = env("RELEASE_STORE_PASSWORD", "vlogstitch")
+            keyAlias = env("RELEASE_KEY_ALIAS", "vlogstitch")
+            keyPassword = env("RELEASE_KEY_PASSWORD", "vlogstitch")
         }
     }
 

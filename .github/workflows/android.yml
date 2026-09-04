@@ -74,8 +74,12 @@ jobs:
           cp "$SRC" "vlog-stitch-v${{ steps.ver.outputs.name }}.apk"
           ls -la *.apk
           echo "--- 簽章指紋（每一版都必須相同，否則更新會裝不起來）---"
-          $ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs *.apk 2>/dev/null \
-            | grep -i "SHA-256 digest" | head -1 || echo "（apksigner 不在預期位置，略過）"
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
+          if [ -n "$SIGNER" ]; then
+            "$SIGNER" verify --print-certs *.apk | grep -i "SHA-256 digest" | head -1
+          else
+            echo "（找不到 apksigner，略過）"
+          fi
 
       - name: 發佈
         uses: softprops/action-gh-release@v2
