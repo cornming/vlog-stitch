@@ -1,14 +1,9 @@
 package tw.cornming.vlogstitch
 
-import android.app.DownloadManager
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
 import android.provider.OpenableColumns
 import android.view.LayoutInflater
 import android.view.Menu
@@ -20,7 +15,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -42,7 +36,6 @@ class MainActivity : AppCompatActivity() {
     private val adapter = ClipAdapter()
     private var exporter: Exporter? = null
     private var busy = false
-    private var downloadId = -1L
 
     private val pick = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -60,36 +53,6 @@ class MainActivity : AppCompatActivity() {
         adapter.notifyDataSetChanged()
         refresh()
         loadMeta()
-    }
-
-    /** APK 下載完就直接叫出安裝畫面，不用經過瀏覽器 */
-    private val downloadDone = object : BroadcastReceiver() {
-        override fun onReceive(ctx: Context, intent: Intent) {
-            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
-            if (id != downloadId) return
-            val dm = getSystemService(DownloadManager::class.java)
-            val uri = dm.getUriForDownloadedFile(id) ?: return
-            val path = dm.getUriForDownloadedFile(id)
-            val file = resolveDownloadedFile()
-            val apkUri = if (file != null && file.exists())
-                FileProvider.getUriForFile(this@MainActivity, "$packageName.fileprovider", file)
-            else path
-            val install = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(apkUri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            try {
-                startActivity(install)
-            } catch (e: Exception) {
-                log("叫不出安裝畫面：${e.message}")
-            }
-        }
-    }
-
-    private fun resolveDownloadedFile(): File? {
-        val dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return null
-        return dir.listFiles()?.filter { it.name.endsWith(".apk") }?.maxByOrNull { it.lastModified() }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,17 +74,7 @@ class MainActivity : AppCompatActivity() {
         updateModeHint()
         refresh()
 
-        ContextCompat.registerReceiver(
-            this, downloadDone,
-            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-            ContextCompat.RECEIVER_EXPORTED
-        )
         checkUpdate(silent = true)
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        try { unregisterReceiver(downloadDone) } catch (_: Exception) {}
     }
 
     // ---------------- 畫面 ----------------
@@ -328,32 +281,77 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 用系統的 DownloadManager 抓 APK，抓完直接叫安裝畫面。
-     * 先前用 ACTION_VIEW 開網址會被 App 內建瀏覽器接走而下載失敗。
+     * 自己把 APK 拉下來再叫安裝，過程全部寫進記錄。
+     * 先前交給系統 DownloadManager，失敗時看不到任何原因。
      */
     private fun downloadUpdate(r: Release) {
         val url = r.apkUrl
         if (url == null) {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(r.pageUrl)))
+            log("這一版沒有附 APK，改開發佈頁")
+            openInBrowser(r.pageUrl)
             return
         }
-        val name = "vlog-stitch-${r.versionName}.apk"
-        try {
-            getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-                ?.listFiles()?.forEach { if (it.name.endsWith(".apk")) it.delete() }
-            val req = DownloadManager.Request(Uri.parse(url))
-                .setTitle(name)
-                .setDescription(getString(R.string.app_name))
-                .setMimeType("application/vnd.android.package-archive")
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, name)
-            downloadId = getSystemService(DownloadManager::class.java).enqueue(req)
-            b.status.text = getString(R.string.downloading)
-            log("下載更新 $name")
-        } catch (e: Exception) {
-            log("下載失敗：${e.message}")
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(r.pageUrl)))
+        if (b.logScroll.visibility != View.VISIBLE) toggleLog()
+
+        // 沒有這個權限，安裝畫面按下去會直接被擋掉，先問
+        if (!Updater.canInstall(this)) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.need_install_perm)
+                .setMessage(R.string.need_install_perm_body)
+                .setPositiveButton(R.string.go_settings) { _, _ ->
+                    Updater.openUnknownSourceSettings(this)
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            log("尚未允許安裝未知來源，已導向設定")
+            return
         }
+
+        val name = "vlog-stitch-${r.versionName}.apk"
+        lifecycleScope.launch {
+            b.progress.isIndeterminate = false
+            b.progress.progress = 0
+            b.status.text = getString(R.string.downloading)
+            log("準備下載 $name")
+            try {
+                val f = Updater.download(
+                    this@MainActivity, url, name,
+                    log = { line -> log(line) },
+                    onProgress = { pct, got, total ->
+                        runOnUiThread {
+                            b.progress.progress = pct
+                            b.status.text = getString(
+                                R.string.downloading_fmt, pct,
+                                got / 1048576.0, total / 1048576.0
+                            )
+                        }
+                    }
+                )
+                b.status.text = getString(R.string.download_ok)
+                if (!Updater.install(this@MainActivity, f, { line -> log(line) })) {
+                    offerBrowser(r)
+                }
+            } catch (e: Exception) {
+                log("下載失敗：${e.javaClass.simpleName} ${e.message}")
+                b.status.text = getString(R.string.download_failed)
+                offerBrowser(r)
+            }
+        }
+    }
+
+    private fun offerBrowser(r: Release) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.download_failed)
+            .setMessage(R.string.download_failed_body)
+            .setPositiveButton(R.string.open_browser) { _, _ -> openInBrowser(r.pageUrl) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** 用選擇器開，才不會被某個 App 的內建瀏覽器直接接走 */
+    private fun openInBrowser(url: String) {
+        val i = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        startActivity(Intent.createChooser(i, getString(R.string.open_browser)))
     }
 
     // ---------------- 片段清單 ----------------

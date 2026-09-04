@@ -31,7 +31,15 @@
     <string name="hint_auto">先試著直接轉封裝，不重新編碼。同一支手機拍的素材通常都能走這條，幾十秒就好，畫質零損失，HDR 也原樣保留。失敗才自動改用重新編碼。</string>
     <string name="hint_mux">只做轉封裝，不接受退路。片段規格不一致就直接失敗，適合用來確認到底能不能免重編。</string>
     <string name="hint_enc">強制重新編碼，並把 HDR 色調對應成 SDR、輸出 H.264。慢很多，畫質會損失，只有規格混雜時才需要。</string>
-    <string name="downloading">開始下載更新，完成後會跳出安裝畫面</string>
+    <string name="downloading">準備下載更新…</string>
+    <string name="downloading_fmt">下載更新　%1$d%%　（%2$.1f / %3$.1f MB）</string>
+    <string name="download_ok">下載完成，正在叫出安裝畫面…</string>
+    <string name="download_failed">更新下載失敗</string>
+    <string name="download_failed_body">可以改用瀏覽器到發佈頁手動下載安裝。詳細原因寫在「顯示詳細記錄」裡，把那段給我就能查。</string>
+    <string name="open_browser">用瀏覽器開啟</string>
+    <string name="need_install_perm">需要允許安裝</string>
+    <string name="need_install_perm_body">這個 App 不是從商店安裝的，所以要先在系統設定裡允許它安裝應用程式，更新才裝得起來。按「前往設定」把「允許安裝不明應用程式」打開，再回來按一次更新。</string>
+    <string name="go_settings">前往設定</string>
     <string name="mode_auto">自動</string>
     <string name="mode_mux">只轉封裝</string>
     <string name="mode_enc">重編轉SDR</string>
