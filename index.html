@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101318">
+<title>接片室 — 手機影片合併工具</title>
+<style>
+:root{
+  --bg:#101318;
+  --surface:#181c24;
+  --surface2:#212734;
+  --line:#2e3646;
+  --text:#e6e9ef;
+  --dim:#929cad;
+  --accent:#ffb020;
+  --accent-ink:#2a1c00;
+  --rec:#ff5a52;
+  --ok:#4fc98d;
+  --radius:12px;
+  --safe-b:env(safe-area-inset-bottom,0px);
+  font-synthesis-weight:none;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  font-size:15px;line-height:1.55;
+  padding-bottom:calc(88px + var(--safe-b));
+  -webkit-text-size-adjust:100%;
+}
+.wrap{max-width:640px;margin:0 auto;padding:0 14px}
+
+/* ---------- 頁首與時間軸 ---------- */
+header{padding:14px 0 10px}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand h1{font-size:19px;font-weight:800;margin:0;letter-spacing:.01em}
+.brand span{font-size:12px;color:var(--dim)}
+.strip{margin-top:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px}
+.strip-head{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--dim)}
+.strip-head b{color:var(--text);font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
+.track{margin-top:9px;height:26px;border-radius:6px;overflow:hidden;display:flex;background:var(--surface2);gap:2px}
+.seg{height:100%;min-width:3px;background:linear-gradient(180deg,#44546f,#2d364a)}
+.subline{margin-top:5px;height:6px;border-radius:3px;background:var(--surface2);position:relative;overflow:hidden}
+.subtick{position:absolute;top:0;bottom:0;background:var(--accent);opacity:.8;min-width:2px}
+.empty-track{display:flex;align-items:center;justify-content:center;height:26px;color:var(--dim);font-size:12px}
+
+/* ---------- 分頁 ---------- */
+nav{display:flex;gap:6px;margin:14px 0 4px;background:var(--surface);padding:5px;border-radius:var(--radius);border:1px solid var(--line)}
+nav button{flex:1;padding:10px 4px;border:0;border-radius:8px;background:transparent;color:var(--dim);font:inherit;font-weight:600;font-size:14px}
+nav button[aria-selected=true]{background:var(--surface2);color:var(--text)}
+section[hidden]{display:none}
+section{padding:10px 0 4px}
+
+/* ---------- 通用元件 ---------- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px;margin-bottom:10px}
+.row{display:flex;align-items:center;gap:10px}
+.grow{flex:1;min-width:0}
+.muted{color:var(--dim);font-size:12.5px}
+.btn{border:1px solid var(--line);background:var(--surface2);color:var(--text);font:inherit;font-weight:600;
+  padding:11px 14px;border-radius:10px;min-height:44px}
+.btn:active{transform:translateY(1px)}
+.btn.small{padding:7px 11px;min-height:36px;font-size:13px;font-weight:600}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{color:var(--rec);border-color:#4a2b2b}
+.btn:disabled{opacity:.42}
+.btn.block{width:100%}
+.pill{display:inline-flex;gap:6px;flex-wrap:wrap}
+.pill button{border:1px solid var(--line);background:transparent;color:var(--dim);font:inherit;font-size:13px;
+  padding:8px 12px;border-radius:999px;min-height:38px}
+.pill button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
+label.field{display:block;font-size:12.5px;color:var(--dim);margin:12px 0 6px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+input[type=text],input[type=number],textarea,select{
+  width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);
+  border-radius:9px;padding:9px 10px;font:inherit;font-size:14px}
+textarea{resize:vertical;min-height:56px}
+.hidden-input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+
+/* ---------- 片段列表 ---------- */
+.clip{border:1px solid var(--line);border-radius:var(--radius);margin-bottom:9px;overflow:hidden;background:var(--surface)}
+.clip-head{display:flex;align-items:center;gap:10px;padding:10px 11px}
+.ord{width:26px;height:26px;flex:none;border-radius:7px;background:var(--surface2);color:var(--dim);
+  display:grid;place-items:center;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+.clip-name{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clip-meta{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+.clip-body{padding:0 11px 12px;border-top:1px solid var(--line)}
+.clip-body video{width:100%;border-radius:9px;background:#000;margin-top:11px;max-height:38vh}
+.icon{border:0;background:transparent;color:var(--dim);font-size:17px;padding:8px 6px;min-width:38px;min-height:38px}
+
+/* ---------- 字幕列表 ---------- */
+.sub{display:flex;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line)}
+.sub:last-child{border-bottom:0}
+.sub input[type=checkbox]{width:21px;height:21px;margin-top:3px;accent-color:var(--accent);flex:none}
+.sub .t{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+.sub .txt{width:100%;background:transparent;border:0;padding:2px 0;color:var(--text);font:inherit;font-size:14px;resize:none;overflow:hidden;min-height:0}
+.sub .txt:focus{outline:0;border-bottom:1px solid var(--accent)}
+.bulkbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.count{font-size:12.5px;color:var(--dim);margin-left:auto;font-variant-numeric:tabular-nums}
+
+/* ---------- 預覽 / 匯出 ---------- */
+#stage{width:100%;background:#000;border-radius:var(--radius);display:block;aspect-ratio:16/9;object-fit:contain}
+#stylePreview{width:100%;border-radius:9px;background:#000;display:block;margin-top:10px}
+.bar{height:7px;border-radius:4px;background:var(--surface2);overflow:hidden;margin-top:10px}
+.bar>div{height:100%;width:0;background:var(--accent);transition:width .2s linear}
+.status{font-size:13px;color:var(--dim);margin-top:9px;min-height:20px}
+.status.warn{color:var(--accent)}
+.status.err{color:var(--rec)}
+#result video{width:100%;border-radius:9px;background:#000;margin-top:10px}
+
+/* ---------- 底部操作列 ---------- */
+.dock{position:fixed;left:0;right:0;bottom:0;background:rgba(16,19,24,.94);
+  backdrop-filter:blur(12px);border-top:1px solid var(--line);
+  padding:10px 14px calc(10px + var(--safe-b))}
+.dock .wrap{padding:0;display:flex;gap:8px}
+.dock .btn{flex:1}
+
+details.note{margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface)}
+details.note summary{font-size:13px;font-weight:600;color:var(--dim);cursor:pointer}
+details.note p,details.note li{font-size:13px;color:var(--dim);line-height:1.65}
+details.note ul{padding-left:18px;margin:8px 0 0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>接片室</h1><span>在手機上把幾段影片接成一支</span>
+    </div>
+    <div class="strip">
+      <div class="strip-head"><span>成品長度</span><b id="totalLen">0:00</b></div>
+      <div class="track" id="track"><div class="empty-track">還沒有影片</div></div>
+      <div class="subline" id="subline"></div>
+    </div>
+  </header>
+
+  <nav role="tablist">
+    <button role="tab" id="tab-clips" aria-selected="true" onclick="ui.tab('clips')">影片</button>
+    <button role="tab" id="tab-subs" aria-selected="false" onclick="ui.tab('subs')">字幕</button>
+    <button role="tab" id="tab-export" aria-selected="false" onclick="ui.tab('export')">匯出</button>
+  </nav>
+
+  <!-- ============ 影片 ============ -->
+  <section id="panel-clips">
+    <input type="file" id="filePick" accept="video/*" multiple class="hidden-input">
+    <div id="clipList"></div>
+    <div class="card" id="clipEmpty">
+      <p class="muted" style="margin:2px 0 12px">選幾段手機拍的影片，由上到下就是接起來的順序。可以先裁掉每段的頭尾。</p>
+      <button class="btn primary block" onclick="ui.pick()">選擇影片</button>
+    </div>
+    <details class="note">
+      <summary>畫面比例不一樣的影片會怎樣？</summary>
+      <ul>
+        <li>成品用你在「匯出」頁選的比例，其他片段會依設定<b>留黑邊</b>或<b>裁切填滿</b>。</li>
+        <li>直式、橫式混著接會很明顯，建議同一支影片只用一種方向拍。</li>
+      </ul>
+    </details>
+  </section>
+
+  <!-- ============ 字幕 ============ -->
+  <section id="panel-subs" hidden>
+    <div class="card">
+      <div class="row" style="margin-bottom:4px">
+        <b class="grow" style="font-size:15px">自動聽打</b>
+        <span class="muted" id="asrDevice"></span>
+      </div>
+      <p class="muted" style="margin:4px 0 10px">用 Whisper 在手機上直接辨識，聲音不會上傳。第一次要下載模型（約 40–150 MB），建議接 Wi-Fi。</p>
+      <div class="row" style="gap:8px">
+        <select id="asrModel" class="grow">
+          <option value="Xenova/whisper-tiny">tiny — 最快，字比較容易錯</option>
+          <option value="Xenova/whisper-base" selected>base — 慢一點，比較準</option>
+          <option value="Xenova/whisper-small">small — 很慢，手機可能撐不住</option>
+        </select>
+        <select id="asrLang" style="width:118px;flex:none">
+          <option value="zh" selected>中文</option>
+          <option value="en">英文</option>
+          <option value="ja">日文</option>
+          <option value="">自動</option>
+        </select>
+      </div>
+      <button class="btn block" id="asrBtn" style="margin-top:10px" onclick="asr.run()">開始辨識全部片段</button>
+      <div class="bar"><div id="asrBar"></div></div>
+      <div class="status" id="asrStatus"></div>
+    </div>
+
+    <div class="card">
+      <div class="bulkbar">
+        <button class="btn small" onclick="subs.selectAll(true)">全選</button>
+        <button class="btn small" onclick="subs.selectAll(false)">取消選取</button>
+        <button class="btn small danger" onclick="subs.removeSelected()">刪除選取</button>
+        <span class="count" id="subCount">0 句</span>
+      </div>
+      <div id="subList"></div>
+      <div class="row" style="gap:8px;margin-top:12px">
+        <button class="btn small grow" onclick="subs.add()">＋ 新增一句</button>
+        <button class="btn small grow" onclick="subs.importSrt()">匯入 SRT</button>
+        <button class="btn small grow" onclick="subs.exportSrt()">匯出 SRT</button>
+      </div>
+      <input type="file" id="srtPick" accept=".srt,.vtt,text/plain" class="hidden-input">
+    </div>
+
+    <div class="card">
+      <b style="font-size:15px">字幕樣式</b>
+      <div class="pill" id="stylePills" style="margin-top:10px"></div>
+      <label class="field">位置</label>
+      <div class="pill" id="posPills"></div>
+      <label class="field">大小 <span id="sizeVal" class="muted"></span></label>
+      <input type="range" id="sizeRange" min="60" max="180" value="100" oninput="ui.styleChanged()">
+      <canvas id="stylePreview" width="640" height="200"></canvas>
+    </div>
+  </section>
+
+  <!-- ============ 匯出 ============ -->
+  <section id="panel-export" hidden>
+    <div class="card">
+      <canvas id="stage" width="1280" height="720"></canvas>
+      <div class="bar"><div id="expBar"></div></div>
+      <div class="status" id="expStatus">按下方的按鈕先預覽，確認接點跟字幕都對再匯出。</div>
+    </div>
+
+    <div class="card">
+      <label class="field">解析度</label>
+      <div class="pill" id="resPills"></div>
+      <label class="field">畫面方向</label>
+      <div class="pill" id="oriPills"></div>
+      <label class="field">比例不合時</label>
+      <div class="pill" id="fitPills"></div>
+      <label class="field" style="margin-top:14px">
+        <span class="row"><input type="checkbox" id="muteMonitor" style="width:20px;height:20px;accent-color:var(--accent)"> <span style="color:var(--text);font-size:14px">匯出時靜音（不從喇叭放出來）</span></span>
+      </label>
+    </div>
+
+    <div class="card" id="result" hidden></div>
+
+    <details class="note" open>
+      <summary>匯出前一定要知道的事</summary>
+      <ul>
+        <li>錄製是<b>照實際速度跑</b>的：5 分鐘的成品就要錄 5 分鐘。</li>
+        <li>過程中<b>不要切到別的 App、不要讓螢幕關掉</b>，否則畫面會停住、成品會斷。工具會自動要求螢幕恆亮權限。</li>
+        <li>成品是 mp4 或 webm，兩種 YouTube 都吃得下。webm 在部分播放器會顯示不出總長度，屬正常。</li>
+        <li>建議先用兩三段短片試跑一次，確認手機撐得住再處理長片。</li>
+      </ul>
+    </details>
+  </section>
+</div>
+
+<div class="dock"><div class="wrap" id="dock"></div></div>
+
+<script>
+/* ============================================================
+   接片室 vlog-stitch — 單檔前端影片合併工具
+   全部運算都在瀏覽器裡，影片不會離開你的手機。
+   ============================================================ */
+
+const FONT='system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
+const FPS=30;
+
+/* transformers.js 的 CDN，會依序嘗試 */
+const TRANSFORMERS_CDN=[
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1',
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0',
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers'
+];
+
+const STYLES={
+  classic:{label:'經典',    weight:800,size:.052,fill:'#ffffff',stroke:'#000000',strokeW:.16,bg:null,shadow:false},
+  variety:{label:'綜藝',    weight:900,size:.062,fill:'#ffe14d',stroke:'#1b1b1b',strokeW:.22,bg:null,shadow:false},
+  bar:    {label:'底條',    weight:700,size:.048,fill:'#ffffff',stroke:null,strokeW:0,  bg:'rgba(0,0,0,.58)',shadow:false},
+  clean:  {label:'細字',    weight:500,size:.046,fill:'#ffffff',stroke:null,strokeW:0,  bg:null,shadow:true},
+  title:  {label:'大字卡',  weight:900,size:.082,fill:'#ffffff',stroke:'#000000',strokeW:.18,bg:null,shadow:false}
+};
+
+const state={
+  clips:[],
+  subs:[],
+  styleKey:'classic',
+  subPos:'bottom',
+  sizeMul:1,
+  res:720,
+  ori:'auto',
+  fit:'contain',
+  tab:'clips'
+};
+
+let uid=0;
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+
+function fmt(t){
+  t=Math.max(0,t||0);
+  const m=Math.floor(t/60),s=Math.floor(t%60);
+  return m+':'+String(s).padStart(2,'0');
+}
+function fmtMs(t){
+  t=Math.max(0,t||0);
+  const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=Math.floor(t%60),ms=Math.round(t%1*1000);
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+','+String(ms).padStart(3,'0');
+}
+function once(el,ev){return new Promise(r=>el.addEventListener(ev,r,{once:true}));}
+const clipLen=c=>Math.max(0,c.trimEnd-c.trimStart);
+const totalLen=()=>state.clips.reduce((a,c)=>a+clipLen(c),0);
+function clipOffset(i){let t=0;for(let k=0;k<i;k++)t+=clipLen(state.clips[k]);return t;}
+
+/* ============================================================
+   影片片段
+   ============================================================ */
+const clips={
+  async add(files){
+    for(const f of files){
+      if(!f.type.startsWith('video/')&&!/\.(mp4|mov|m4v|webm|mkv|3gp)$/i.test(f.name))continue;
+      const c={id:++uid,file:f,name:f.name,url:URL.createObjectURL(f),
+               dur:0,w:0,h:0,trimStart:0,trimEnd:0,open:false,ready:false};
+      state.clips.push(c);
+      ui.renderClips();
+      try{await clips.probe(c);}catch(e){c.err='讀不到這個檔案';}
+      ui.renderAll();
+    }
+  },
+  probe(c){
+    return new Promise((res,rej)=>{
+      const v=document.createElement('video');
+      v.preload='metadata';v.muted=true;v.playsInline=true;v.src=c.url;
+      const done=()=>{
+        c.dur=isFinite(v.duration)?v.duration:0;
+        c.w=v.videoWidth;c.h=v.videoHeight;c.trimEnd=c.dur;c.ready=true;res();
+      };
+      v.addEventListener('loadedmetadata',done,{once:true});
+      v.addEventListener('error',()=>rej(new Error('metadata')),{once:true});
+      setTimeout(()=>{if(!c.ready)c.dur?done():rej(new Error('timeout'));},12000);
+    });
+  },
+  move(id,d){
+    const i=state.clips.findIndex(c=>c.id===id);const j=i+d;
+    if(i<0||j<0||j>=state.clips.length)return;
+    [state.clips[i],state.clips[j]]=[state.clips[j],state.clips[i]];
+    ui.renderAll();
+  },
+  remove(id){
+    const i=state.clips.findIndex(c=>c.id===id);if(i<0)return;
+    URL.revokeObjectURL(state.clips[i].url);
+    if(state.clips[i].vid)state.clips[i].vid.remove();
+    state.clips.splice(i,1);
+    ui.renderAll();
+  },
+  toggle(id){
+    const c=state.clips.find(x=>x.id===id);if(!c)return;
+    c.open=!c.open;ui.renderClips();
+  },
+  setTrim(id,which,val){
+    const c=state.clips.find(x=>x.id===id);if(!c)return;
+    if(which==='start')c.trimStart=clamp(val,0,Math.max(0,c.trimEnd-.3));
+    else c.trimEnd=clamp(val,Math.min(c.dur,c.trimStart+.3),c.dur);
+    ui.syncClip(c);ui.renderStrip();
+  },
+  fromPreview(id,which){
+    const v=$('pv-'+id);if(!v)return;
+    clips.setTrim(id,which,v.currentTime);
+  },
+  resetTrim(id){
+    const c=state.clips.find(x=>x.id===id);if(!c)return;
+    c.trimStart=0;c.trimEnd=c.dur;ui.renderClips();ui.renderStrip();
+  },
+  /* 播放用的 video 元素，一段一個並重複使用 */
+  el(c){
+    if(!c.vid){
+      const v=document.createElement('video');
+      v.src=c.url;v.preload='auto';v.playsInline=true;v.setAttribute('playsinline','');
+      v.crossOrigin='anonymous';v.style.cssText='position:fixed;left:-9999px;width:2px;height:2px';
+      document.body.appendChild(v);c.vid=v;
+    }
+    return c.vid;
+  }
+};
+
+/* ============================================================
+   字幕
+   ============================================================ */
+const subs={
+  add(){
+    const t=engine.lastTime||0;
+    state.subs.push({id:++uid,start:t,end:t+2,text:'',sel:false});
+    subs.sort();ui.renderSubs();ui.renderStrip();
+    const el=document.querySelector('#subList .sub:last-child .txt');if(el)el.focus();
+  },
+  sort(){state.subs.sort((a,b)=>a.start-b.start);},
+  selectAll(v){state.subs.forEach(s=>s.sel=v);ui.renderSubs();},
+  toggle(id,v){const s=state.subs.find(x=>x.id===id);if(s)s.sel=v;},
+  removeSelected(){
+    const n=state.subs.filter(s=>s.sel).length;
+    if(!n){ui.toast('先勾選要刪的字幕');return;}
+    if(!confirm('刪除 '+n+' 句字幕？'))return;
+    state.subs=state.subs.filter(s=>!s.sel);ui.renderSubs();ui.renderStrip();
+  },
+  clear(){
+    if(!state.subs.length)return;
+    if(!confirm('清空全部字幕？'))return;
+    state.subs=[];ui.renderSubs();ui.renderStrip();
+  },
+  update(id,k,v){
+    const s=state.subs.find(x=>x.id===id);if(!s)return;
+    if(k==='text')s.text=v;
+    else{
+      s[k]=Math.max(0,parseFloat(v)||0);
+      if(s.end<=s.start)s.end=s.start+.5;
+    }
+    if(k!=='text'){subs.sort();ui.renderStrip();}
+  },
+  activeAt(t){return state.subs.filter(s=>t>=s.start&&t<s.end);},
+  importSrt(){$('srtPick').click();},
+  async parseSrt(text){
+    const out=[];
+    const blocks=text.replace(/\r/g,'').replace(/^WEBVTT.*\n/,'').split(/\n{2,}/);
+    const tc=/(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/;
+    for(const b of blocks){
+      const m=b.match(tc);if(!m)continue;
+      const s=+m[1]*3600+ +m[2]*60+ +m[3]+ +m[4]/1000;
+      const e=+m[5]*3600+ +m[6]*60+ +m[7]+ +m[8]/1000;
+      const txt=b.split('\n').filter(l=>!tc.test(l)&&!/^\d+$/.test(l.trim())).join(' ').trim();
+      if(txt)out.push({id:++uid,start:s,end:e,text:txt,sel:false});
+    }
+    return out;
+  },
+  exportSrt(){
+    if(!state.subs.length){ui.toast('還沒有字幕');return;}
+    subs.sort();
+    const txt=state.subs.map((s,i)=>`${i+1}\n${fmtMs(s.start)} --> ${fmtMs(s.end)}\n${s.text}\n`).join('\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain;charset=utf-8'}));
+    a.download='subtitles.srt';a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  }
+};
+
+/* ============================================================
+   字幕繪製
+   ============================================================ */
+function tokenize(text){
+  const out=[];let buf='';
+  for(const ch of text){
+    if(/[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(ch)){
+      if(buf){out.push(buf);buf='';}out.push(ch);
+    }else if(/\s/.test(ch)){
+      if(buf){out.push(buf);buf='';}
+    }else buf+=ch;
+  }
+  if(buf)out.push(buf);
+  return out;
+}
+function wrapLines(ctx,text,maxW){
+  const toks=tokenize(text),lines=[];let cur='';
+  for(const t of toks){
+    const sep=(cur&&/[A-Za-z0-9]$/.test(cur)&&/^[A-Za-z0-9]/.test(t))?' ':'';
+    const test=cur+sep+t;
+    if(cur&&ctx.measureText(test).width>maxW){lines.push(cur);cur=t;}
+    else cur=test;
+  }
+  if(cur)lines.push(cur);
+  return lines.slice(0,4);
+}
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+}
+function drawSubtitle(ctx,text,W,H){
+  if(!text)return;
+  const s=STYLES[state.styleKey];
+  const fs=Math.max(13,Math.round(H*s.size*state.sizeMul));
+  ctx.save();
+  ctx.font=`${s.weight} ${fs}px ${FONT}`;
+  ctx.textAlign='center';ctx.textBaseline='alphabetic';
+  const lines=wrapLines(ctx,text,W*.88);
+  const lh=Math.round(fs*1.3),blockH=lines.length*lh;
+  let baseY;
+  if(state.subPos==='top')baseY=Math.round(H*.09)+fs;
+  else if(state.subPos==='middle')baseY=Math.round((H-blockH)/2)+fs;
+  else baseY=H-Math.round(H*.075)-blockH+fs;
+  lines.forEach((ln,i)=>{
+    const y=baseY+i*lh,w=ctx.measureText(ln).width;
+    if(s.bg){
+      ctx.fillStyle=s.bg;
+      roundRect(ctx,(W-w)/2-fs*.4,y-fs*.95,w+fs*.8,fs*1.3,fs*.16);
+      ctx.fill();
+    }
+    if(s.strokeW>0){
+      ctx.lineJoin='round';ctx.miterLimit=2;
+      ctx.lineWidth=fs*s.strokeW;ctx.strokeStyle=s.stroke;
+      ctx.strokeText(ln,W/2,y);
+    }
+    if(s.shadow){ctx.shadowColor='rgba(0,0,0,.7)';ctx.shadowBlur=fs*.28;ctx.shadowOffsetY=fs*.05;}
+    ctx.fillStyle=s.fill;ctx.fillText(ln,W/2,y);
+    ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+  });
+  ctx.restore();
+}
+
+/* ============================================================
+   播放與匯出引擎
+   ============================================================ */
+const engine={
+  running:false,cancel:false,lastTime:0,raf:0,
+  actx:null,recDest:null,monitor:null,wake:null,
+
+  outSize(){
+    const first=state.clips.find(c=>c.w&&c.h);
+    let portrait=state.ori==='portrait';
+    if(state.ori==='auto')portrait=first?first.h>first.w:false;
+    const short=state.res,long=Math.round(state.res*16/9/2)*2;
+    return portrait?{w:short,h:long}:{w:long,h:short};
+  },
+
+  audio(){
+    if(!engine.actx){
+      const AC=window.AudioContext||window.webkitAudioContext;
+      engine.actx=new AC();
+      engine.recDest=engine.actx.createMediaStreamDestination();
+      engine.monitor=engine.actx.createGain();
+      engine.monitor.connect(engine.actx.destination);
+    }
+    if(engine.actx.state==='suspended')engine.actx.resume();
+    return engine.actx;
+  },
+  hook(c){
+    const v=clips.el(c);
+    if(!c.node){
+      try{
+        c.node=engine.actx.createMediaElementSource(v);
+        c.node.connect(engine.recDest);
+        c.node.connect(engine.monitor);
+      }catch(e){/* 已連過就略過 */}
+    }
+    return v;
+  },
+
+  draw(ctx,v,W,H,t){
+    ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+    const vw=v.videoWidth||16,vh=v.videoHeight||9;
+    if(vw&&vh){
+      const s=state.fit==='cover'?Math.max(W/vw,H/vh):Math.min(W/vw,H/vh);
+      const w=vw*s,h=vh*s;
+      try{ctx.drawImage(v,(W-w)/2,(H-h)/2,w,h);}catch(e){}
+    }
+    const act=subs.activeAt(t);
+    if(act.length)drawSubtitle(ctx,act.map(a=>a.text).join(' '),W,H);
+  },
+
+  async run({record}){
+    if(engine.running)return;
+    if(!state.clips.length){ui.toast('先加入影片');return;}
+    if(state.clips.some(c=>!c.ready)){ui.toast('影片還在讀取，等一下');return;}
+
+    engine.running=true;engine.cancel=false;
+    const canvas=$('stage'),{w:W,h:H}=engine.outSize();
+    canvas.width=W;canvas.height=H;
+    canvas.style.aspectRatio=W+'/'+H;
+    const ctx=canvas.getContext('2d',{alpha:false});
+    ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+
+    engine.audio();
+    engine.monitor.gain.value=(record&&$('muteMonitor').checked)?0:1;
+
+    const total=totalLen();
+    let rec=null,chunks=[],mime='';
+
+    ui.setDock();
+    try{
+      /* 先把每段都定位好，減少接點空白 */
+      ui.expStatus(record?'準備中…':'預覽準備中…');
+      for(const c of state.clips){
+        const v=engine.hook(c);
+        if(v.readyState<1){v.load();await Promise.race([once(v,'loadedmetadata'),new Promise(r=>setTimeout(r,6000))]);}
+        if(Math.abs(v.currentTime-c.trimStart)>.05){
+          v.currentTime=c.trimStart;
+          await Promise.race([once(v,'seeked'),new Promise(r=>setTimeout(r,5000))]);
+        }
+      }
+
+      if(record){
+        try{if('wakeLock'in navigator)engine.wake=await navigator.wakeLock.request('screen');}catch(e){}
+        mime=pickMime();
+        if(!mime)throw new Error('這個瀏覽器不支援錄影輸出（MediaRecorder）');
+        const stream=canvas.captureStream(FPS);
+        engine.recDest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
+        rec=new MediaRecorder(stream,{
+          mimeType:mime,
+          videoBitsPerSecond:state.res>=1080?10e6:6e6,
+          audioBitsPerSecond:128000
+        });
+        rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
+        rec.start(1000);
+      }
+
+      let base=0;
+      for(let i=0;i<state.clips.length&&!engine.cancel;i++){
+        const c=state.clips[i],v=engine.hook(c);
+        if(Math.abs(v.currentTime-c.trimStart)>.15){
+          v.currentTime=c.trimStart;
+          await Promise.race([once(v,'seeked'),new Promise(r=>setTimeout(r,3000))]);
+        }
+        try{await v.play();}catch(e){throw new Error('無法播放第 '+(i+1)+' 段（瀏覽器擋住了自動播放）');}
+
+        await new Promise(done=>{
+          const step=()=>{
+            if(engine.cancel){v.pause();done();return;}
+            const t=base+(v.currentTime-c.trimStart);
+            engine.lastTime=t;
+            engine.draw(ctx,v,W,H,t);
+            ui.progress(record?'expBar':null,t/total,record,t,total);
+            if(v.currentTime>=c.trimEnd-1/FPS||v.ended){v.pause();done();return;}
+            engine.raf=requestAnimationFrame(step);
+          };
+          engine.raf=requestAnimationFrame(step);
+        });
+        base+=clipLen(c);
+      }
+
+      if(rec){
+        await new Promise(r=>setTimeout(r,350));
+        const stopped=once(rec,'stop');rec.stop();await stopped;
+        if(engine.cancel){ui.expStatus('已取消。','warn');}
+        else{
+          const blob=new Blob(chunks,{type:mime.split(';')[0]});
+          ui.showResult(blob,mime);
+          ui.expStatus('完成，成品 '+(blob.size/1048576).toFixed(1)+' MB。','ok');
+        }
+      }else{
+        ui.expStatus(engine.cancel?'預覽已停止。':'預覽播完了。');
+      }
+    }catch(err){
+      try{if(rec&&rec.state!=='inactive')rec.stop();}catch(e){}
+      ui.expStatus('出問題了：'+err.message,'err');
+    }finally{
+      cancelAnimationFrame(engine.raf);
+      state.clips.forEach(c=>{if(c.vid)c.vid.pause();});
+      if(engine.wake){try{engine.wake.release();}catch(e){}engine.wake=null;}
+      engine.running=false;engine.cancel=false;
+      ui.setDock();
+    }
+  },
+
+  stop(){engine.cancel=true;}
+};
+
+function pickMime(){
+  const list=[
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm'
+  ];
+  for(const m of list)if(window.MediaRecorder&&MediaRecorder.isTypeSupported(m))return m;
+  return '';
+}
+
+/* ============================================================
+   自動聽打（Whisper via transformers.js）
+   ============================================================ */
+const asr={
+  pipe:null,model:null,busy:false,
+
+  async load(model){
+    if(asr.pipe&&asr.model===model)return asr.pipe;
+    let lib=null,lastErr=null;
+    for(const url of TRANSFORMERS_CDN){
+      try{lib=await import(url);break;}catch(e){lastErr=e;}
+    }
+    if(!lib)throw new Error('載入不到辨識程式庫，檢查一下網路：'+(lastErr&&lastErr.message||''));
+    lib.env.allowLocalModels=false;
+
+    let device='wasm';
+    try{if(navigator.gpu&&await navigator.gpu.requestAdapter())device='webgpu';}catch(e){}
+    $('asrDevice').textContent=device==='webgpu'?'WebGPU 加速':'CPU 運算';
+
+    asr.pipe=await lib.pipeline('automatic-speech-recognition',model,{
+      dtype:'q8',device,
+      progress_callback:p=>{
+        if(p.status==='progress'&&p.total)
+          asr.say('下載模型 '+(p.file||'').split('/').pop()+' '+Math.round(p.progress)+'%',p.progress/100);
+        else if(p.status==='ready')asr.say('模型就緒');
+      }
+    });
+    asr.model=model;
+    return asr.pipe;
+  },
+
+  async pcm(file,from,to){
+    const buf=await file.arrayBuffer();
+    const AC=window.AudioContext||window.webkitAudioContext;
+    const tmp=new AC();
+    let audio;
+    try{audio=await tmp.decodeAudioData(buf);}
+    finally{tmp.close();}
+    const sr=16000;
+    const s=Math.max(0,from||0),e=Math.min(audio.duration,to||audio.duration);
+    const len=Math.max(1,Math.ceil((e-s)*sr));
+    const off=new OfflineAudioContext(1,len,sr);
+    const src=off.createBufferSource();
+    src.buffer=audio;src.connect(off.destination);src.start(0,s,e-s);
+    const out=await off.startRendering();
+    return out.getChannelData(0);
+  },
+
+  say(msg,p){
+    $('asrStatus').textContent=msg;
+    if(typeof p==='number')$('asrBar').style.width=clamp(p*100,0,100)+'%';
+  },
+
+  async run(){
+    if(asr.busy)return;
+    if(!state.clips.length){ui.toast('先加入影片');return;}
+    const model=$('asrModel').value,lang=$('asrLang').value;
+    asr.busy=true;$('asrBtn').disabled=true;
+    let wake=null;
+    try{
+      try{if('wakeLock'in navigator)wake=await navigator.wakeLock.request('screen');}catch(e){}
+      asr.say('載入模型…',0);
+      const pipe=await asr.load(model);
+      const fresh=[];
+      for(let i=0;i<state.clips.length;i++){
+        const c=state.clips[i];
+        asr.say(`第 ${i+1}/${state.clips.length} 段：取出聲音…`,i/state.clips.length);
+        let pcmData;
+        try{pcmData=await asr.pcm(c.file,c.trimStart,c.trimEnd);}
+        catch(e){asr.say(`第 ${i+1} 段的聲音讀不出來，跳過`);continue;}
+        asr.say(`第 ${i+1}/${state.clips.length} 段：辨識中，請不要切走…`,i/state.clips.length);
+        const opt={chunk_length_s:30,stride_length_s:5,return_timestamps:true,task:'transcribe'};
+        if(lang)opt.language=lang;
+        const res=await pipe(pcmData,opt);
+        const off=clipOffset(i);
+        const parts=res.chunks&&res.chunks.length?res.chunks:[{timestamp:[0,clipLen(c)],text:res.text}];
+        for(const p of parts){
+          const txt=(p.text||'').trim();if(!txt)continue;
+          const st=(p.timestamp&&p.timestamp[0])||0;
+          const en=(p.timestamp&&p.timestamp[1])||st+2;
+          fresh.push({id:++uid,start:off+st,end:off+Math.max(en,st+.6),text:txt,sel:false});
+        }
+        pcmData=null;
+      }
+      if(!fresh.length){asr.say('沒有辨識到內容，可能是聲音太小或沒有人聲。');}
+      else{
+        if(state.subs.length&&confirm('已有 '+state.subs.length+' 句字幕，要換成這次辨識的結果嗎？（取消＝合併）'))
+          state.subs=fresh;
+        else state.subs=state.subs.concat(fresh);
+        subs.sort();ui.renderSubs();ui.renderStrip();
+        asr.say('辨識完成，共 '+fresh.length+' 句。',1);
+      }
+    }catch(e){
+      asr.say('辨識失敗：'+e.message);
+    }finally{
+      if(wake){try{wake.release();}catch(e){}}
+      asr.busy=false;$('asrBtn').disabled=false;
+    }
+  }
+};
+
+/* ============================================================
+   介面
+   ============================================================ */
+const ui={
+  tab(name){
+    state.tab=name;
+    ['clips','subs','export'].forEach(n=>{
+      $('panel-'+n).hidden=n!==name;
+      $('tab-'+n).setAttribute('aria-selected',String(n===name));
+    });
+    ui.setDock();
+    if(name==='subs')ui.drawStylePreview();
+    if(name==='export')ui.fitStage();
+  },
+  pick(){$('filePick').click();},
+  toast(msg){
+    const d=document.createElement('div');
+    d.textContent=msg;
+    d.style.cssText='position:fixed;left:50%;bottom:calc(100px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);'+
+      'background:#28303e;border:1px solid #3a4456;color:#e6e9ef;'+
+      'padding:10px 16px;border-radius:999px;font-size:13.5px;z-index:99;max-width:88vw;text-align:center';
+    document.body.appendChild(d);
+    setTimeout(()=>d.remove(),2200);
+  },
+
+  renderAll(){ui.renderClips();ui.renderSubs();ui.renderStrip();ui.setDock();},
+
+  renderStrip(){
+    const total=totalLen();
+    $('totalLen').textContent=fmt(total);
+    const track=$('track');
+    if(!state.clips.length){track.innerHTML='<div class="empty-track">還沒有影片</div>';$('subline').innerHTML='';return;}
+    track.innerHTML=state.clips.map(c=>{
+      const p=total?clipLen(c)/total*100:0;
+      return `<div class="seg" style="flex:0 0 ${p}%" title="${esc(c.name)}"></div>`;
+    }).join('');
+    $('subline').innerHTML=total?state.subs.map(s=>
+      `<div class="subtick" style="left:${clamp(s.start/total*100,0,100)}%;width:${clamp((s.end-s.start)/total*100,.4,100)}%"></div>`
+    ).join(''):'';
+  },
+
+  renderClips(){
+    const box=$('clipList');
+    $('clipEmpty').hidden=state.clips.length>0;
+    box.innerHTML=state.clips.map((c,i)=>{
+      const meta=ui.clipMeta(c);
+      return `<div class="clip">
+        <div class="clip-head">
+          <div class="ord">${i+1}</div>
+          <div class="grow" onclick="clips.toggle(${c.id})">
+            <div class="clip-name">${esc(c.name)}</div>
+            <div class="clip-meta" id="meta-${c.id}">${meta}</div>
+          </div>
+          <button class="icon" onclick="clips.move(${c.id},-1)" ${i===0?'disabled':''} aria-label="上移">↑</button>
+          <button class="icon" onclick="clips.move(${c.id},1)" ${i===state.clips.length-1?'disabled':''} aria-label="下移">↓</button>
+          <button class="icon" onclick="clips.toggle(${c.id})" aria-label="展開">${c.open?'▴':'▾'}</button>
+        </div>
+        ${c.open?ui.clipBody(c):''}
+      </div>`;
+    }).join('');
+    state.clips.forEach(c=>{
+      if(!c.open)return;
+      const a=$('ra-'+c.id),b=$('rb-'+c.id);
+      if(a){a.value=c.trimStart;a.oninput=e=>clips.setTrim(c.id,'start',+e.target.value);}
+      if(b){b.value=c.trimEnd;b.oninput=e=>clips.setTrim(c.id,'end',+e.target.value);}
+    });
+  },
+  clipBody(c){
+    if(!c.ready)return `<div class="clip-body"><p class="muted" style="margin:11px 0 0">讀取中…</p></div>`;
+    return `<div class="clip-body">
+      <video id="pv-${c.id}" src="${c.url}" controls playsinline preload="metadata"></video>
+      <label class="field" id="lab-s-${c.id}">起點 ${fmt(c.trimStart)}</label>
+      <input type="range" id="ra-${c.id}" min="0" max="${c.dur}" step="0.05">
+      <label class="field" id="lab-e-${c.id}">終點 ${fmt(c.trimEnd)}</label>
+      <input type="range" id="rb-${c.id}" min="0" max="${c.dur}" step="0.05">
+      <div class="row" style="gap:7px;margin-top:11px;flex-wrap:wrap">
+        <button class="btn small" onclick="clips.fromPreview(${c.id},'start')">目前位置設為起點</button>
+        <button class="btn small" onclick="clips.fromPreview(${c.id},'end')">設為終點</button>
+        <button class="btn small" onclick="clips.resetTrim(${c.id})">還原</button>
+        <button class="btn small danger" style="margin-left:auto" onclick="clips.remove(${c.id})">移除這段</button>
+      </div>
+    </div>`;
+  },
+
+  renderSubs(){
+    const box=$('subList');
+    $('subCount').textContent=state.subs.length+' 句';
+    if(!state.subs.length){
+      box.innerHTML='<p class="muted" style="margin:6px 0">還沒有字幕。可以自動聽打、匯入 SRT，或手動加一句。</p>';
+      return;
+    }
+    box.innerHTML=state.subs.map(s=>`<div class="sub">
+      <input type="checkbox" ${s.sel?'checked':''} onchange="subs.toggle(${s.id},this.checked)">
+      <div class="grow">
+        <div class="t">
+          <input type="number" step="0.1" value="${s.start.toFixed(1)}" style="width:72px;display:inline-block;padding:3px 6px;font-size:11.5px"
+            onchange="subs.update(${s.id},'start',this.value);ui.renderSubs()">
+          →
+          <input type="number" step="0.1" value="${s.end.toFixed(1)}" style="width:72px;display:inline-block;padding:3px 6px;font-size:11.5px"
+            onchange="subs.update(${s.id},'end',this.value);ui.renderSubs()">
+        </div>
+        <textarea class="txt" rows="1" oninput="subs.update(${s.id},'text',this.value);ui.autoGrow(this)" placeholder="字幕內容">${esc(s.text)}</textarea>
+      </div>
+    </div>`).join('');
+    box.querySelectorAll('.txt').forEach(ui.autoGrow);
+  },
+  autoGrow(el){el.style.height='auto';el.style.height=el.scrollHeight+'px';},
+
+  clipMeta(c){
+    if(c.err)return '<span style="color:var(--rec)">'+esc(c.err)+'</span>';
+    if(!c.ready)return '讀取中…';
+    const cut=(c.trimStart>0||c.trimEnd<c.dur-.05)?'　已裁切':'';
+    return fmt(clipLen(c))+'　'+c.w+'×'+c.h+cut;
+  },
+  /* 只更新單一片段的數字，避免整個列表重畫害預覽影片重載 */
+  syncClip(c){
+    const m=$('meta-'+c.id);if(m)m.innerHTML=ui.clipMeta(c);
+    const ls=$('lab-s-'+c.id);if(ls)ls.textContent='起點 '+fmt(c.trimStart);
+    const le=$('lab-e-'+c.id);if(le)le.textContent='終點 '+fmt(c.trimEnd);
+    const ra=$('ra-'+c.id);if(ra&&+ra.value!==c.trimStart)ra.value=c.trimStart;
+    const rb=$('rb-'+c.id);if(rb&&+rb.value!==c.trimEnd)rb.value=c.trimEnd;
+  },
+
+  styleChanged(){
+    state.sizeMul=+$('sizeRange').value/100;
+    $('sizeVal').textContent=Math.round(state.sizeMul*100)+'%';
+    ui.drawStylePreview();ui.saveStyle();
+  },
+  drawStylePreview(){
+    const cv=$('stylePreview'),W=cv.width=640,H=cv.height=360;
+    const ctx=cv.getContext('2d');
+    const g=ctx.createLinearGradient(0,0,W,H);
+    g.addColorStop(0,'#243043');g.addColorStop(.55,'#3a4055');g.addColorStop(1,'#4a3a2a');
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='rgba(255,255,255,.05)';
+    for(let i=0;i<7;i++)ctx.fillRect(i*95+12,0,44,H);
+    drawSubtitle(ctx,'這是字幕看起來的樣子',W,H);
+  },
+
+  progress(barId,p,record,t,total){
+    if(barId)$(barId).style.width=clamp(p*100,0,100)+'%';
+    $('expStatus').className='status';
+    $('expStatus').textContent=(record?'匯出中 ':'預覽中 ')+fmt(t)+' / '+fmt(total)+
+      (record?'　保持螢幕開著':'');
+  },
+  expStatus(msg,cls){
+    const el=$('expStatus');
+    el.className='status'+(cls==='err'?' err':cls==='warn'?' warn':'');
+    el.textContent=msg;
+    if(cls==='ok')el.style.color='var(--ok)';else el.style.color='';
+  },
+  fitStage(){
+    const {w,h}=engine.outSize();
+    const cv=$('stage');cv.style.aspectRatio=w+'/'+h;
+  },
+
+  showResult(blob,mime){
+    const box=$('result');box.hidden=false;
+    const ext=mime.includes('mp4')?'mp4':'webm';
+    const name='vlog-'+new Date().toISOString().slice(0,19).replace(/[-:T]/g,'')+'.'+ext;
+    const url=URL.createObjectURL(blob);
+    box.innerHTML=`<b style="font-size:15px">成品</b>
+      <p class="muted" style="margin:5px 0 0">${name}　${(blob.size/1048576).toFixed(1)} MB</p>
+      <video src="${url}" controls playsinline></video>
+      <div class="row" style="gap:8px;margin-top:10px">
+        <a class="btn primary grow" style="text-align:center;text-decoration:none;line-height:22px" href="${url}" download="${name}">下載到手機</a>
+        <button class="btn grow" id="shareBtn">分享</button>
+      </div>`;
+    const sb=$('shareBtn');
+    const file=new File([blob],name,{type:blob.type});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      sb.onclick=()=>navigator.share({files:[file],title:name}).catch(()=>{});
+    }else{
+      sb.disabled=true;sb.textContent='此瀏覽器不支援分享';
+    }
+    box.scrollIntoView({behavior:'smooth',block:'nearest'});
+  },
+
+  setDock(){
+    const d=$('dock');
+    if(engine.running){
+      d.innerHTML=`<button class="btn danger block" onclick="engine.stop()">停止</button>`;
+      return;
+    }
+    if(state.tab==='clips'){
+      d.innerHTML=`<button class="btn primary block" onclick="ui.pick()">${state.clips.length?'再加影片':'選擇影片'}</button>`
+        +(state.clips.length?`<button class="btn" onclick="ui.tab('export')">預覽</button>`:'');
+    }else if(state.tab==='subs'){
+      d.innerHTML=`<button class="btn danger" onclick="subs.clear()">清空字幕</button>
+                   <button class="btn primary grow" onclick="ui.tab('export')">去匯出</button>`;
+    }else{
+      const dis=state.clips.length?'':'disabled';
+      d.innerHTML=`<button class="btn" ${dis} onclick="engine.run({record:false})">預覽</button>
+                   <button class="btn primary grow" ${dis} onclick="engine.run({record:true})">匯出影片</button>`;
+    }
+  },
+
+  pills(id,items,get,set){
+    const box=$(id);
+    box.innerHTML=items.map(([v,l])=>`<button data-v="${v}" aria-pressed="${String(get()===v)}">${l}</button>`).join('');
+    box.onclick=e=>{
+      const b=e.target.closest('button');if(!b)return;
+      let v=b.dataset.v;
+      if(/^\d+$/.test(v))v=+v;
+      set(v);
+      [...box.children].forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.v==String(get()))));
+    };
+  },
+
+  saveStyle(){
+    try{localStorage.setItem('vlog-stitch-style',JSON.stringify({
+      k:state.styleKey,p:state.subPos,m:state.sizeMul,r:state.res,o:state.ori,f:state.fit
+    }));}catch(e){}
+  },
+  loadStyle(){
+    try{
+      const s=JSON.parse(localStorage.getItem('vlog-stitch-style')||'{}');
+      if(s.k&&STYLES[s.k])state.styleKey=s.k;
+      if(s.p)state.subPos=s.p;
+      if(s.m)state.sizeMul=s.m;
+      if(s.r)state.res=s.r;
+      if(s.o)state.ori=s.o;
+      if(s.f)state.fit=s.f;
+    }catch(e){}
+  }
+};
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+/* ============================================================
+   啟動
+   ============================================================ */
+ui.loadStyle();
+
+ui.pills('stylePills',Object.entries(STYLES).map(([k,v])=>[k,v.label]),
+  ()=>state.styleKey,v=>{state.styleKey=v;ui.drawStylePreview();ui.saveStyle();});
+ui.pills('posPills',[['top','上'],['middle','中'],['bottom','下']],
+  ()=>state.subPos,v=>{state.subPos=v;ui.drawStylePreview();ui.saveStyle();});
+ui.pills('resPills',[[720,'720p'],[1080,'1080p']],
+  ()=>state.res,v=>{state.res=v;ui.fitStage();ui.saveStyle();});
+ui.pills('oriPills',[['auto','跟著第一段'],['landscape','橫式'],['portrait','直式']],
+  ()=>state.ori,v=>{state.ori=v;ui.fitStage();ui.saveStyle();});
+ui.pills('fitPills',[['contain','留黑邊'],['cover','裁切填滿']],
+  ()=>state.fit,v=>{state.fit=v;ui.saveStyle();});
+
+$('sizeRange').value=Math.round(state.sizeMul*100);
+$('sizeVal').textContent=Math.round(state.sizeMul*100)+'%';
+
+$('filePick').addEventListener('change',e=>{
+  clips.add([...e.target.files]);e.target.value='';
+});
+$('srtPick').addEventListener('change',async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const list=await subs.parseSrt(await f.text());
+  if(!list.length){ui.toast('這個檔案讀不到字幕');return;}
+  state.subs=state.subs.concat(list);subs.sort();
+  ui.renderSubs();ui.renderStrip();ui.toast('匯入 '+list.length+' 句');
+});
+
+window.addEventListener('beforeunload',e=>{
+  if(state.clips.length||engine.running){e.preventDefault();e.returnValue='';}
+});
+
+if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){
+  ui.expStatus('這個瀏覽器不支援影片錄製，請改用 Chrome（Android）或 Safari 17 以上（iPhone）。','err');
+}
+
+ui.renderAll();
+ui.drawStylePreview();
+ui.fitStage();
+</script>
+</body>
+</html>
