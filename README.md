@@ -48,19 +48,26 @@ python3 -m http.server 8080
 - 五種樣式：經典、綜藝、底條、細字、大字卡；位置上中下、大小 60%–180%
 - 可以匯入／匯出 SRT，跟其他工具接得起來
 
-**匯出**
-- 輸出 mp4（瀏覽器支援時）或 webm，兩種 YouTube 都吃
+**匯出**　三種方式，在匯出頁自己選：
+
+| 方式 | 速度 | 字幕 | 用在什麼時候 |
+|---|---|---|---|
+| 快速接片 | 幾秒 | 另存 SRT | 片段編碼、解析度都一樣時的最佳選擇，畫質零損失 |
+| 重新編碼 | 比即時快數倍 | 燒進畫面 | 要硬字幕，或素材規格不一致 |
+| 即時錄製 | 跟影片一樣長 | 燒進畫面 | 瀏覽器沒有 WebCodecs 時的相容退路 |
+
+- 輸出 mp4，可以直接上傳 YouTube
 - 手機支援的話可以直接用系統「分享」丟進 YouTube App
 
 ---
 
 ## 幾個一定要知道的限制
 
-**匯出是照實際速度跑的。** 5 分鐘的成品就要錄 5 分鐘，中途不能切到別的 App、不能讓螢幕關掉，不然畫面會停住、成品會斷在那裡。工具會自動申請 Screen Wake Lock，但還是別把手機放著不管。
+**快速接片有前提。** 所有片段的影像編碼、解析度、編碼參數必須一致，聲音的編碼、取樣率、聲道數也要一致。同一支手機用同一個 App 拍的通常沒問題，混到不同來源就不行。不符合時會自動改用重新編碼，並在畫面上說明原因。
 
-**這不是重新編碼，是「螢幕錄影」。** 底層用 Canvas 逐格畫 + MediaRecorder 錄下來，所以畫質會比原始素材差一點，接點也可能有幾格空白。要無損剪接得用 ffmpeg.wasm 或 WebCodecs，那是另一個量級的工程。
+**快速接片的裁切點會對齊關鍵影格。** 因為完全沒有重新編碼，只能從關鍵影格開始切，實際起點可能比你設定的早一兩秒。匯出後會告訴你有幾段被移動過。需要精準裁切就用重新編碼模式。
 
-**webm 沒有總長度資訊。** MediaRecorder 產出的 webm 在部分播放器會顯示不出時間長度，這是已知行為，YouTube 上傳不受影響。
+**只有即時錄製模式會跑滿影片長度。** 那是 MediaRecorder 錄 canvas 的舊做法，留著當退路。匯出中都不要切到別的 App。
 
 **自動聽打很吃資源。** 第一次要下載模型（tiny 約 40MB、base 約 80MB、small 約 250MB）。辨識跑在 Web Worker 裡，過程中畫面照樣能操作，也可以隨時按停止。素材很長的話建議先用 tiny 試。
 
@@ -74,12 +81,21 @@ python3 -m http.server 8080
 state              單一狀態物件：clips[]、subs[]、樣式與輸出設定
 ├─ clips           片段管理：加入、探測 metadata、排序、裁切、產生播放用 video 元素
 ├─ subs            字幕資料：新增、勾選、刪除、SRT 匯入匯出、查詢某時間點的字幕
-├─ engine          播放與匯出引擎（核心）
+├─ mb / xport      WebCodecs 匯出引擎（核心，用 mediabunny）
+├─ engine          即時預覽與 MediaRecorder 退路
 ├─ asr             Whisper 自動聽打
 └─ ui              所有畫面渲染與事件
 ```
 
-**engine 的運作方式**
+**xport：兩條快速路徑**
+
+兩條都建立在 [mediabunny](https://mediabunny.dev) 上，它把 WebCodecs 包成好用的 API，並補上 WebCodecs 沒有的 mux／demux。從 CDN 動態 `import()`，不進版本庫。
+
+*快速接片（`xport.remux`）*　完全不碰畫素。用 `EncodedPacketSink` 把每段的封包讀出來，`packet.clone({timestamp})` 位移時間戳，再用 `EncodedVideoPacketSource` / `EncodedAudioPacketSource` 寫進同一個 mp4。第一個封包要附上 `decoderConfig`，後面就不用。裁切用 `getKeyPacket(trimStart)` 找關鍵影格起點，所以會有對齊誤差。開跑前先用 `checkCompat()` 比對所有片段的編碼參數，包含 `description` 的位元組，不一致就擋下來改走重新編碼。
+
+*重新編碼（`xport.encode`）*　用 `VideoSampleSink.samples(start, end)` 逐格取出解碼後的畫面，`drawWithFit()` 依「留黑邊／裁切填滿」畫進 canvas，疊上該時間點的字幕，再交給 `CanvasSource.add(timestamp, duration)` 硬體編碼。聲音走 `AudioSampleSink` → `toAudioBuffer()` → `AudioBufferSource.add()`；`AudioBufferSource` 會把每個 buffer 依序接在前一個後面，所以不用自己算時間戳。**沒有聲音軌的片段會補一段等長靜音**，否則後面所有片段的聲音都會提前，畫面對不上嘴。
+
+**engine 的運作方式（即時錄製退路）**
 
 1. `outSize()` 依素材方向和設定算出輸出畫布尺寸
 2. 開始前先把每段影片都 seek 到各自的起點，減少接點空白
@@ -113,8 +129,8 @@ state              單一狀態物件：clips[]、subs[]、樣式與輸出設定
 
 ## 之後可以做的
 
-- [ ] 匯出改用 WebCodecs + mp4 muxer，可以比即時快很多，畫質也不會二次損失
-- [ ] 修補 webm 的 duration metadata
+- [ ] 把 xport 也搬進 Worker，重新編碼時畫面就不會頓
+- [ ] 快速接片支援關鍵影格之間的精準裁切（頭尾局部重編碼）
 - [ ] 轉場、背景音樂、靜音段自動偵測
 - [ ] 用 IndexedDB 存草稿，關掉頁面不會全部重來
 
@@ -122,4 +138,9 @@ state              單一狀態物件：clips[]、subs[]、樣式與輸出設定
 
 ## 授權
 
-MIT
+本專案採 MIT。
+
+執行時會從 CDN 載入兩個函式庫，都沒有打包進版本庫：
+
+- [mediabunny](https://github.com/Vanilagy/mediabunny)（MPL-2.0）— 影片讀寫與轉換
+- [transformers.js](https://github.com/huggingface/transformers.js)（Apache-2.0）— Whisper 自動聽打

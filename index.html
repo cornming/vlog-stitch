@@ -223,6 +223,9 @@ details.note ul{padding-left:18px;margin:8px 0 0}
     </div>
 
     <div class="card">
+      <label class="field">匯出方式</label>
+      <div class="pill" id="modePills"></div>
+      <p class="muted" id="modeHint" style="margin:9px 0 2px"></p>
       <label class="field">解析度</label>
       <div class="pill" id="resPills"></div>
       <label class="field">畫面方向</label>
@@ -239,9 +242,10 @@ details.note ul{padding-left:18px;margin:8px 0 0}
     <details class="note" open>
       <summary>匯出前一定要知道的事</summary>
       <ul>
-        <li>錄製是<b>照實際速度跑</b>的：5 分鐘的成品就要錄 5 分鐘。</li>
-        <li>過程中<b>不要切到別的 App、不要讓螢幕關掉</b>，否則畫面會停住、成品會斷。工具會自動要求螢幕恆亮權限。</li>
-        <li>成品是 mp4 或 webm，兩種 YouTube 都吃得下。webm 在部分播放器會顯示不出總長度，屬正常。</li>
+        <li><b>快速接片</b>要求所有片段的編碼、解析度都一樣。不一樣的話會自動改用重新編碼，並告訴你原因。</li>
+        <li>只有<b>即時錄製</b>模式會跑跟影片一樣長的時間，其他兩種都快得多。</li>
+        <li>匯出中<b>不要切到別的 App</b>。工具會自動要求螢幕恆亮權限。</li>
+        <li>成品是 mp4，可以直接上傳 YouTube。</li>
         <li>建議先用兩三段短片試跑一次，確認手機撐得住再處理長片。</li>
       </ul>
     </details>
@@ -348,6 +352,7 @@ const state={
   styleKey:'classic',
   subPos:'bottom',
   sizeMul:1,
+  mode:'fast',
   res:720,
   ori:'auto',
   fit:'contain',
@@ -908,6 +913,275 @@ const asr={
 };
 
 /* ============================================================
+   mediabunny：WebCodecs 匯出引擎
+   ============================================================ */
+const MEDIABUNNY_CDN=[
+  'https://cdn.jsdelivr.net/npm/mediabunny@1/+esm',
+  'https://esm.sh/mediabunny@1',
+  'https://cdn.jsdelivr.net/npm/mediabunny/+esm'
+];
+
+const mb={
+  lib:null,
+  supported(){return typeof window.VideoEncoder==='function'&&typeof window.VideoDecoder==='function';},
+  async load(){
+    if(mb.lib)return mb.lib;
+    let last=null;
+    for(const url of MEDIABUNNY_CDN){
+      try{mb.lib=await import(url);return mb.lib;}catch(e){last=e;}
+    }
+    throw new Error('載入不到影片處理程式庫，檢查一下網路：'+((last&&last.message)||''));
+  }
+};
+
+/* 由完整 codec 字串推短代號，例如 avc1.42001f → avc */
+function shortCodec(full){
+  const s=String(full||'').toLowerCase();
+  if(s.startsWith('avc1')||s.startsWith('avc3'))return 'avc';
+  if(s.startsWith('hvc1')||s.startsWith('hev1'))return 'hevc';
+  if(s.startsWith('vp09'))return 'vp9';
+  if(s.startsWith('vp8'))return 'vp8';
+  if(s.startsWith('av01'))return 'av1';
+  if(s.startsWith('mp4a'))return 'aac';
+  if(s.startsWith('opus'))return 'opus';
+  if(s.startsWith('vorbis'))return 'vorbis';
+  if(s.startsWith('flac'))return 'flac';
+  return s.split('.')[0]||'';
+}
+function sameBytes(a,b){
+  if(!a&&!b)return true;
+  if(!a||!b)return false;
+  const x=new Uint8Array(a.buffer||a),y=new Uint8Array(b.buffer||b);
+  if(x.length!==y.length)return false;
+  for(let i=0;i<x.length;i++)if(x[i]!==y[i])return false;
+  return true;
+}
+
+const xport={
+  busy:false,cancel:false,wake:null,
+
+  stop(){xport.cancel=true;engine.cancel=true;},
+
+  async openAll(lib){
+    const out=[];
+    for(const c of state.clips){
+      const input=new lib.Input({formats:lib.ALL_FORMATS,source:new lib.BlobSource(c.file)});
+      const vt=await input.getPrimaryVideoTrack();
+      if(!vt)throw new Error('「'+c.name+'」裡面找不到影像軌');
+      const at=await input.getPrimaryAudioTrack();
+      out.push({
+        clip:c,input,vt,at,
+        vcfg:await vt.getDecoderConfig(),
+        acfg:at?await at.getDecoderConfig():null
+      });
+    }
+    return out;
+  },
+
+  /* 檢查能不能免重新編碼直接接起來 */
+  checkCompat(list){
+    const a=list[0];
+    for(let i=1;i<list.length;i++){
+      const b=list[i];
+      if(shortCodec(a.vcfg.codec)!==shortCodec(b.vcfg.codec))
+        return '影像編碼不同（'+shortCodec(a.vcfg.codec)+' 對 '+shortCodec(b.vcfg.codec)+'）';
+      if(a.vcfg.codedWidth!==b.vcfg.codedWidth||a.vcfg.codedHeight!==b.vcfg.codedHeight)
+        return '解析度不同（'+a.vcfg.codedWidth+'×'+a.vcfg.codedHeight+' 對 '+b.vcfg.codedWidth+'×'+b.vcfg.codedHeight+'）';
+      if(!sameBytes(a.vcfg.description,b.vcfg.description))
+        return '影像編碼參數不同，可能是不同 App 或不同設定拍的';
+      if(!!a.acfg!==!!b.acfg)return '有的片段有聲音、有的沒有';
+      if(a.acfg&&b.acfg){
+        if(shortCodec(a.acfg.codec)!==shortCodec(b.acfg.codec))return '聲音編碼不同';
+        if(a.acfg.sampleRate!==b.acfg.sampleRate)return '取樣率不同';
+        if(a.acfg.numberOfChannels!==b.acfg.numberOfChannels)return '聲道數不同';
+      }
+    }
+    return null;
+  },
+
+  /* ---------- 模式一：轉封裝，不重新編碼 ---------- */
+  async remux(lib,list){
+    const first=list[0];
+    const out=new lib.Output({format:new lib.Mp4OutputFormat(),target:new lib.BufferTarget()});
+    const vsrc=new lib.EncodedVideoPacketSource(shortCodec(first.vcfg.codec));
+    out.addVideoTrack(vsrc);
+    const asrc=first.acfg?new lib.EncodedAudioPacketSource(shortCodec(first.acfg.codec)):null;
+    if(asrc)out.addAudioTrack(asrc);
+    await out.start();
+
+    let offset=0,vFirst=true,aFirst=true,total=totalLen(),snapped=0;
+
+    for(const it of list){
+      if(xport.cancel)throw new Error('已取消');
+      const c=it.clip;
+      const vsink=new lib.EncodedPacketSink(it.vt);
+      let pkt=await vsink.getKeyPacket(c.trimStart);
+      if(!pkt)pkt=await vsink.getKeyPacket(0);
+      if(!pkt)throw new Error('「'+c.name+'」讀不到影像資料');
+      const realStart=pkt.timestamp;
+      if(Math.abs(realStart-c.trimStart)>0.05)snapped++;
+
+      while(pkt&&pkt.timestamp<c.trimEnd){
+        if(xport.cancel)throw new Error('已取消');
+        const shifted=pkt.clone({timestamp:offset+(pkt.timestamp-realStart)});
+        await vsrc.add(shifted,vFirst?{decoderConfig:it.vcfg}:undefined);
+        vFirst=false;
+        xport.progress((offset+(pkt.timestamp-realStart))/total,'接片中');
+        pkt=await vsink.getNextPacket(pkt);
+      }
+
+      if(asrc&&it.at){
+        const asink=new lib.EncodedPacketSink(it.at);
+        let ap=await asink.getKeyPacket(realStart);
+        if(!ap)ap=await asink.getKeyPacket(0);
+        while(ap&&ap.timestamp<c.trimEnd){
+          if(xport.cancel)throw new Error('已取消');
+          await asrc.add(ap.clone({timestamp:offset+(ap.timestamp-realStart)}),
+                         aFirst?{decoderConfig:it.acfg}:undefined);
+          aFirst=false;
+          ap=await asink.getNextPacket(ap);
+        }
+      }
+      offset+=Math.max(0,c.trimEnd-realStart);
+    }
+
+    vsrc.close();if(asrc)asrc.close();
+    await out.finalize();
+    return {buffer:out.target.buffer,snapped};
+  },
+
+  /* ---------- 模式二：重新編碼，字幕燒進畫面 ---------- */
+  async encode(lib,list){
+    const {w:W,h:H}=engine.outSize();
+    const canvas=$('stage');
+    canvas.width=W;canvas.height=H;canvas.style.aspectRatio=W+'/'+H;
+    const ctx=canvas.getContext('2d',{alpha:false});
+
+    const format=new lib.Mp4OutputFormat();
+    const out=new lib.Output({format,target:new lib.BufferTarget()});
+
+    const vcodec=await lib.getFirstEncodableVideoCodec(format.getSupportedVideoCodecs(),{width:W,height:H});
+    if(!vcodec)throw new Error('這台手機沒有可用的影像編碼器');
+    const vsrc=new lib.CanvasSource(canvas,{
+      codec:vcodec,
+      quality:new lib.Quality({bitrate:state.res>=1080?10e6:6e6}),
+      keyFrameInterval:2
+    });
+    out.addVideoTrack(vsrc);
+
+    const anyAudio=list.some(x=>x.at);
+    let asrc=null;
+    if(anyAudio){
+      const acodec=await lib.getFirstEncodableAudioCodec(format.getSupportedAudioCodecs());
+      if(acodec){
+        asrc=new lib.AudioBufferSource({codec:acodec,quality:new lib.Quality('high')});
+        out.addAudioTrack(asrc);
+      }
+    }
+    await out.start();
+
+    const total=totalLen();
+    let base=0;
+
+    for(const it of list){
+      if(xport.cancel)throw new Error('已取消');
+      const c=it.clip,len=clipLen(c);
+
+      const vsink=new lib.VideoSampleSink(it.vt);
+      for await (const sample of vsink.samples(c.trimStart,c.trimEnd)){
+        if(xport.cancel){sample.close();throw new Error('已取消');}
+        const t=base+Math.max(0,sample.timestamp-c.trimStart);
+        ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+        try{sample.drawWithFit(ctx,{fit:state.fit==='cover'?'cover':'contain'});}catch(e){}
+        const act=subs.activeAt(t);
+        if(act.length)drawSubtitle(ctx,act.map(x=>x.text).join(' '),W,H);
+        await vsrc.add(t,sample.duration||1/FPS);
+        sample.close();
+        xport.progress(t/total,'重新編碼中');
+      }
+
+      if(asrc){
+        if(it.at){
+          const asink=new lib.AudioSampleSink(it.at);
+          for await (const s of asink.samples(c.trimStart,c.trimEnd)){
+            if(xport.cancel){s.close();throw new Error('已取消');}
+            await asrc.add(s.toAudioBuffer());
+            s.close();
+          }
+        }else{
+          /* 沒聲音的片段補等長靜音，不然後面的聲音會對不上畫面 */
+          const sr=48000;
+          await asrc.add(new AudioBuffer({length:Math.max(1,Math.round(len*sr)),sampleRate:sr,numberOfChannels:1}));
+        }
+      }
+      base+=len;
+    }
+
+    vsrc.close();if(asrc)asrc.close();
+    await out.finalize();
+    return {buffer:out.target.buffer,snapped:0};
+  },
+
+  progress(p,label){
+    $('expBar').style.width=clamp(p*100,0,100)+'%';
+    const el=$('expStatus');
+    el.className='status';
+    el.textContent=label+'　'+Math.round(clamp(p*100,0,100))+'%';
+  },
+
+  async run(){
+    if(xport.busy||engine.running)return;
+    if(!state.clips.length){ui.toast('先加入影片');return;}
+    if(state.clips.some(c=>!c.ready)){ui.toast('影片還在讀取，等一下');return;}
+
+    if(state.mode==='record'){engine.run({record:true});return;}
+    if(!mb.supported()){
+      ui.expStatus('這個瀏覽器沒有 WebCodecs，只能用即時錄製模式。','warn');
+      state.mode='record';ui.syncModePills();return;
+    }
+
+    xport.busy=true;xport.cancel=false;
+    $('result').hidden=true;
+    ui.setDock();
+    const t0=performance.now();
+    try{
+      try{if('wakeLock'in navigator)xport.wake=await navigator.wakeLock.request('screen');}catch(e){}
+      ui.expStatus('讀取影片資訊…');
+      const lib=await mb.load();
+      const list=await xport.openAll(lib);
+
+      let res,mode=state.mode;
+      if(mode==='fast'){
+        const why=xport.checkCompat(list);
+        if(why){
+          ui.expStatus('沒辦法免重編碼（'+why+'），改用重新編碼。','warn');
+          mode='encode';
+        }
+      }
+      res=mode==='fast'?await xport.remux(lib,list):await xport.encode(lib,list);
+
+      const secs=((performance.now()-t0)/1000);
+      const blob=new Blob([res.buffer],{type:'video/mp4'});
+      ui.showResult(blob,'video/mp4');
+      let msg='完成，'+(blob.size/1048576).toFixed(1)+' MB，花了 '+secs.toFixed(1)+' 秒';
+      const total=totalLen();
+      if(total>0)msg+='（影片長 '+fmt(total)+'，約 '+(total/secs).toFixed(1)+' 倍速）';
+      if(mode==='fast'){
+        msg+='。字幕沒有燒進畫面，記得另外下載 SRT 上傳。';
+        if(res.snapped)msg+='　有 '+res.snapped+' 段的起點被移到最近的關鍵影格。';
+      }
+      ui.expStatus(msg,'ok');
+    }catch(e){
+      ui.expStatus(xport.cancel?'已取消匯出。':'匯出失敗：'+e.message,xport.cancel?'warn':'err');
+    }finally{
+      if(xport.wake){try{xport.wake.release();}catch(e){}xport.wake=null;}
+      xport.busy=false;xport.cancel=false;
+      ui.setDock();
+    }
+  }
+};
+
+/* ============================================================
    介面
    ============================================================ */
 const ui={
@@ -919,7 +1193,7 @@ const ui={
     });
     ui.setDock();
     if(name==='subs')ui.drawStylePreview();
-    if(name==='export')ui.fitStage();
+    if(name==='export'){ui.fitStage();ui.syncModePills();}
   },
   pick(){$('filePick').click();},
   toast(msg){
@@ -1058,6 +1332,17 @@ const ui={
     el.textContent=msg;
     if(cls==='ok')el.style.color='var(--ok)';else el.style.color='';
   },
+  syncModePills(){
+    const box=$('modePills');
+    if(box)[...box.children].forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.v===state.mode)));
+    const hints={
+      fast:'不重新編碼，直接把原始資料接起來。幾秒鐘就好，畫質零損失。字幕不會燒進畫面，匯出後另外下載 SRT，上傳 YouTube 時一起加。裁切點會對齊最近的關鍵影格，可能差個一兩秒。',
+      encode:'重新編碼，字幕燒進畫面。比即時快好幾倍，實際倍數看手機。畫質會有一點損失，比例不同的素材也是在這個模式處理。',
+      record:'舊做法，會跟影片一樣長。只有在前兩種都不能用的時候才需要，例如瀏覽器沒有 WebCodecs。'
+    };
+    const h=$('modeHint');
+    if(h)h.textContent=hints[state.mode]||'';
+  },
   fitStage(){
     const {w,h}=engine.outSize();
     const cv=$('stage');cv.style.aspectRatio=w+'/'+h;
@@ -1074,7 +1359,8 @@ const ui={
       <div class="row" style="gap:8px;margin-top:10px">
         <a class="btn primary grow" style="text-align:center;text-decoration:none;line-height:22px" href="${url}" download="${name}">下載到手機</a>
         <button class="btn grow" id="shareBtn">分享</button>
-      </div>`;
+      </div>
+      ${(state.mode==='fast'&&state.subs.length)?'<button class="btn block" style="margin-top:8px" onclick="subs.exportSrt()">下載字幕 SRT（上傳 YouTube 時一起加）</button>':''}`;
     const sb=$('shareBtn');
     const file=new File([blob],name,{type:blob.type});
     if(navigator.canShare&&navigator.canShare({files:[file]})){
@@ -1087,8 +1373,8 @@ const ui={
 
   setDock(){
     const d=$('dock');
-    if(engine.running){
-      d.innerHTML=`<button class="btn danger block" onclick="engine.stop()">停止</button>`;
+    if(engine.running||xport.busy){
+      d.innerHTML=`<button class="btn danger block" onclick="xport.stop()">停止</button>`;
       return;
     }
     if(state.tab==='clips'){
@@ -1100,7 +1386,7 @@ const ui={
     }else{
       const dis=state.clips.length?'':'disabled';
       d.innerHTML=`<button class="btn" ${dis} onclick="engine.run({record:false})">預覽</button>
-                   <button class="btn primary grow" ${dis} onclick="engine.run({record:true})">匯出影片</button>`;
+                   <button class="btn primary grow" ${dis} onclick="xport.run()">匯出影片</button>`;
     }
   },
 
@@ -1118,7 +1404,7 @@ const ui={
 
   saveStyle(){
     try{localStorage.setItem('vlog-stitch-style',JSON.stringify({
-      k:state.styleKey,p:state.subPos,m:state.sizeMul,r:state.res,o:state.ori,f:state.fit
+      k:state.styleKey,p:state.subPos,m:state.sizeMul,r:state.res,o:state.ori,f:state.fit,x:state.mode
     }));}catch(e){}
   },
   loadStyle(){
@@ -1130,6 +1416,7 @@ const ui={
       if(s.r)state.res=s.r;
       if(s.o)state.ori=s.o;
       if(s.f)state.fit=s.f;
+      if(s.x)state.mode=s.x;
     }catch(e){}
   }
 };
@@ -1145,6 +1432,8 @@ ui.pills('stylePills',Object.entries(STYLES).map(([k,v])=>[k,v.label]),
   ()=>state.styleKey,v=>{state.styleKey=v;ui.drawStylePreview();ui.saveStyle();});
 ui.pills('posPills',[['top','上'],['middle','中'],['bottom','下']],
   ()=>state.subPos,v=>{state.subPos=v;ui.drawStylePreview();ui.saveStyle();});
+ui.pills('modePills',[['fast','快速接片'],['encode','重新編碼＋燒字幕'],['record','即時錄製']],
+  ()=>state.mode,v=>{state.mode=v;ui.syncModePills();ui.saveStyle();});
 ui.pills('resPills',[[720,'720p'],[1080,'1080p']],
   ()=>state.res,v=>{state.res=v;ui.fitStage();ui.saveStyle();});
 ui.pills('oriPills',[['auto','跟著第一段'],['landscape','橫式'],['portrait','直式']],
@@ -1174,6 +1463,11 @@ if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){
   ui.expStatus('這個瀏覽器不支援影片錄製，請改用 Chrome（Android）或 Safari 17 以上（iPhone）。','err');
 }
 
+if(!mb.supported()){
+  state.mode='record';
+  ui.expStatus('這個瀏覽器沒有 WebCodecs，只能用即時錄製模式（匯出時間會跟影片一樣長）。','warn');
+}
+ui.syncModePills();
 ui.renderAll();
 ui.drawStylePreview();
 ui.fitStage();
