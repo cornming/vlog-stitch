@@ -84,4 +84,7 @@ dependencies {
     implementation("androidx.media3:media3-effect:$media3")
     implementation("androidx.media3:media3-common:$media3")
     implementation("androidx.media3:media3-exoplayer:$media3")
+
+    // 裝置端語音辨識（Alpha）。Advanced 模式用 Gemini Nano，只有 Pixel 10/11 支援
+    implementation("com.google.mlkit:genai-speech-recognition:1.0.0-alpha1")
 }

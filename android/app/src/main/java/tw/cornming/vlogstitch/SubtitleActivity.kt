@@ -1,6 +1,7 @@
 package tw.cornming.vlogstitch
 
 import android.app.Activity
+import android.net.Uri
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -15,7 +16,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import tw.cornming.vlogstitch.databinding.ActivitySubtitlesBinding
 import tw.cornming.vlogstitch.databinding.ItemSubtitleBinding
 
@@ -29,6 +35,9 @@ class SubtitleActivity : AppCompatActivity() {
     private val subs = ArrayList<Subtitle>()
     private val adapter = Adapter()
     private var totalMs = 0L
+    private var clipUris = ArrayList<Uri>()
+    private var asrJob: Job? = null
+    private val asrCancel = AtomicBoolean(false)
 
     private val importSrt = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -69,6 +78,7 @@ class SubtitleActivity : AppCompatActivity() {
         b.toolbar.setNavigationOnClickListener { done() }
 
         totalMs = intent.getLongExtra(EXTRA_TOTAL, 0L)
+        intent.getStringArrayListExtra(EXTRA_CLIPS)?.forEach { clipUris.add(Uri.parse(it)) }
         subs.addAll(Store.subs(this))
 
         b.list.layoutManager = LinearLayoutManager(this)
@@ -84,7 +94,83 @@ class SubtitleActivity : AppCompatActivity() {
         b.btnSelectNone.setOnClickListener { setAll(false) }
         b.btnDelete.setOnClickListener { deleteSelected() }
 
+        b.btnAsr.setOnClickListener { if (asrJob != null) stopAsr() else startAsr() }
+        setupAsrBox()
         refresh()
+    }
+
+    private fun setupAsrBox() {
+        val adv = Transcriber.advancedSupported()
+        b.asrHint.text = when {
+            clipUris.isEmpty() -> getString(R.string.asr_hint_noclip)
+            adv -> getString(R.string.asr_hint_ok, Media.fmtDuration(totalMs))
+            else -> getString(R.string.asr_hint_basic)
+        }
+        b.btnAsr.isEnabled = clipUris.isNotEmpty()
+    }
+
+    private fun startAsr() {
+        asrCancel.set(false)
+        b.btnAsr.setText(R.string.asr_stop)
+        b.asrProgress.visibility = View.VISIBLE
+        b.asrProgress.progress = 0
+        b.asrStatus.text = ""
+        val before = subs.size
+        asrJob = lifecycleScope.launch {
+            try {
+                val got = Transcriber.run(
+                    ctx = this@SubtitleActivity,
+                    clips = clipUris,
+                    totalMs = totalMs,
+                    locale = Locale.forLanguageTag("cmn-Hant-TW"),
+                    advanced = Transcriber.advancedSupported(),
+                    log = { line -> runOnUiThread { b.asrStatus.text = line } },
+                    onProgress = { p ->
+                        runOnUiThread {
+                            if (totalMs > 0)
+                                b.asrProgress.progress = ((p.fedMs * 100) / totalMs).toInt().coerceIn(0, 100)
+                            b.asrStatus.text = getString(
+                                R.string.asr_running,
+                                Media.fmtDuration(p.fedMs), Media.fmtDuration(totalMs), p.lines
+                            )
+                        }
+                    },
+                    cancelled = asrCancel
+                )
+                if (got.isEmpty()) {
+                    b.asrStatus.text = getString(R.string.asr_done, 0)
+                } else if (before > 0) {
+                    AlertDialog.Builder(this@SubtitleActivity)
+                        .setMessage(getString(R.string.asr_replace, before))
+                        .setPositiveButton(android.R.string.ok) { _, _ ->
+                            subs.clear(); subs.addAll(got); sortAndRefresh()
+                        }
+                        .setNegativeButton(android.R.string.cancel) { _, _ ->
+                            subs.addAll(got); sortAndRefresh()
+                        }
+                        .show()
+                    b.asrStatus.text = getString(R.string.asr_done, got.size)
+                } else {
+                    subs.addAll(got); sortAndRefresh()
+                    b.asrStatus.text = getString(R.string.asr_done, got.size)
+                }
+            } catch (e: Exception) {
+                b.asrStatus.text = getString(R.string.asr_failed,
+                    "${e.javaClass.simpleName} ${e.message ?: ""}")
+            } finally {
+                asrJob = null
+                b.btnAsr.setText(R.string.asr_start)
+                b.asrProgress.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun stopAsr() {
+        asrCancel.set(true)
+        asrJob?.cancel()
+        asrJob = null
+        b.btnAsr.setText(R.string.asr_start)
+        b.asrProgress.visibility = View.GONE
     }
 
     override fun onBackPressed() { done(); }
@@ -223,5 +309,6 @@ class SubtitleActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_TOTAL = "total_ms"
+        const val EXTRA_CLIPS = "clip_uris"
     }
 }

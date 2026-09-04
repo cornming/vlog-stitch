@@ -117,6 +117,8 @@ class MainActivity : AppCompatActivity() {
     private fun openSubtitles() {
         val i = Intent(this, SubtitleActivity::class.java)
         i.putExtra(SubtitleActivity.EXTRA_TOTAL, clips.sumOf { it.durationMs })
+        i.putStringArrayListExtra(
+            SubtitleActivity.EXTRA_CLIPS, ArrayList(clips.map { it.uri.toString() }))
         subEditor.launch(i)
     }
 

@@ -48,6 +48,18 @@
     <string name="log_empty">還沒有記錄</string>
     <string name="log_saved">記錄已存到下載資料夾</string>
     <string name="subtitles">字幕</string>
+    <string name="asr_title">自動聽打（實驗性）</string>
+    <string name="asr_hint_ok">用手機內建的 Gemini Nano 辨識，聲音不會上傳。
+
+注意：這個 API 規定音訊只能以實際速度餵入，所以 %1$s 的素材大約要跑 %1$s。過程中請讓 App 保持在畫面上，切走會被系統中斷。</string>
+    <string name="asr_hint_basic">這台裝置不支援 Advanced 模式（只有 Pixel 10 與 Pixel 11 支援），會改用 Basic 模式，中文準確度較差。</string>
+    <string name="asr_hint_noclip">還沒有選影片，回上一頁選好再回來。</string>
+    <string name="asr_start">開始辨識</string>
+    <string name="asr_stop">停止</string>
+    <string name="asr_running">辨識中　%1$s / %2$s　已產生 %3$d 句</string>
+    <string name="asr_done">完成，新增 %d 句</string>
+    <string name="asr_failed">失敗：%s</string>
+    <string name="asr_replace">已有 %d 句字幕，要換成這次辨識的結果嗎？取消則合併。</string>
     <string name="sub_count">%d 句</string>
     <string name="sub_hint_total">時間軸是接起來之後的成品時間，目前成品長 %s</string>
     <string name="sub_empty">還沒有字幕。可以匯入 SRT（YouTube 自動字幕下載下來就是這個格式），或自己新增一句。</string>
