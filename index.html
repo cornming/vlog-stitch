@@ -346,7 +346,7 @@ self.onmessage=async e=>{
    ============================================================ */
 
 /* 每次改動都要更新，診斷記錄會印出來，用來確認手機拿到的是不是新版 */
-const APP_VERSION='v7 (2026-09-04)　重新編碼時聲音直接複製，不經過解碼器';
+const APP_VERSION='v9 (2026-09-04)　裁切、聲音越界、聲音規格不一致全數修正（已用真影片驗證）';
 
 const FONT='system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
 const FPS=30;
@@ -1245,9 +1245,9 @@ const xport={
     }
 
     vsrc.close();if(asrc)asrc.close();
-    dbg.add('封裝完成，總長 '+offset.toFixed(2)+'s，收尾中…');
+    dbg.add('封裝完成，實際總長 '+offset.toFixed(2)+'s（原本預期 '+total.toFixed(2)+'s）收尾中…');
     await out.finalize();
-    return {snapped};
+    return {snapped,realLen:offset};
   },
 
   /* ---------- 模式二：重新編碼，字幕燒進畫面 ---------- */
@@ -1279,16 +1279,25 @@ const xport={
         let ap=await asink.getKeyPacket(c.trimStart);
         if(!ap)ap=await asink.getKeyPacket(0);
         if(!ap)throw new Error('讀不到聲音封包');
-        const aStart=ap.timestamp;
-        let n=0;
+        /* 關鍵影格可能落在 trimStart 之前，而 getNextPacket 也可能吐出超過
+           trimEnd 的封包。兩邊都會讓時間戳越界、跟隔壁片段重疊而被拒收，
+           所以只收落在這段裁切範圍內的封包。 */
+        let n=0,before=0,after=0;
         while(ap&&ap.timestamp<c.trimEnd){
           if(xport.cancel)throw new Error('已取消');
-          await asrc.add(ap.clone({timestamp:au.base+(ap.timestamp-aStart)}),
-                         au.first?{decoderConfig:it.acfg}:undefined);
-          au.first=false;n++;
+          const rel=ap.timestamp-c.trimStart;
+          if(rel<0)before++;
+          else if(rel>=len)after++;
+          else{
+            await asrc.add(ap.clone({timestamp:au.base+rel}),
+                           au.first?{decoderConfig:it.acfg}:undefined);
+            au.first=false;n++;
+          }
           ap=await asink.getNextPacket(ap);
         }
-        dbg.add(`[${i+1}] 聲音直接複製 ${n} 個封包（未解碼、未重編）`);
+        if(!n)throw new Error('裁切範圍內沒有聲音封包');
+        dbg.add(`[${i+1}] 聲音直接複製 ${n} 個封包（未解碼、未重編）`
+          +`${before?('，丟棄起點前 '+before+' 個'):''}${after?('，丟棄終點後 '+after+' 個'):''}`);
         return;
       }catch(e){
         if(xport.cancel)throw e;
@@ -1321,9 +1330,9 @@ const xport={
         dbg.add(`[${i+1}] Web Audio 也失敗（${e2.message}），這段補靜音`);
       }
     }
-    const sr=48000;
-    await asrc.add(new AudioBuffer({length:Math.max(1,Math.round(len*sr)),sampleRate:sr,numberOfChannels:1}));
-    dbg.add(`[${i+1}] 補 ${len.toFixed(2)}s 靜音`);
+    const sr=au.sr||48000,ch=au.ch||1;
+    await asrc.add(new AudioBuffer({length:Math.max(1,Math.round(len*sr)),sampleRate:sr,numberOfChannels:ch}));
+    dbg.add(`[${i+1}] 補 ${len.toFixed(2)}s 靜音（${sr}Hz / ${ch}ch）`);
   },
 
   async encode(lib,list,dest){
@@ -1356,8 +1365,15 @@ const xport={
       const acodec=await lib.getFirstEncodableAudioCodec(format.getSupportedAudioCodecs());
       dbg.add('聲音處理方式：各段規格不一致，需要解碼重編（'+(acodec||'找不到編碼器')+'）');
       if(acodec){
-        au={src:new lib.AudioBufferSource({codec:acodec,quality:new lib.Quality('high')}),
-            mode:'decode',first:true,base:0};
+        /* 各段的聲道數／取樣率可能不同，來源會拒絕中途變更參數，
+           所以統一正規化成第一段有聲音的規格 */
+        const ref=list.find(x=>x.acfg);
+        const sr=(ref&&ref.acfg.sampleRate)||48000;
+        const ch=Math.min(2,(ref&&ref.acfg.numberOfChannels)||2);
+        dbg.add(`聲音統一正規化為 ${sr}Hz / ${ch}ch`);
+        au={src:new lib.AudioBufferSource({codec:acodec,quality:new lib.Quality('high'),
+              transform:{numberOfChannels:ch,sampleRate:sr}}),
+            mode:'decode',first:true,base:0,sr,ch};
         out.addAudioTrack(au.src);
       }
     }else dbg.add('所有片段都沒有聲音軌');
@@ -1375,11 +1391,14 @@ const xport={
 
       dbg.add(`[${i+1}] 開始解碼影像 ${c.trimStart.toFixed(2)}s→${c.trimEnd.toFixed(2)}s，輸出位移 ${base.toFixed(2)}s`);
       const tStart=performance.now();
-      let n=0,skipped=0,lastT=0,lastSlot=-1;
+      let n=0,skipped=0,over=0,lastT=0,lastSlot=-1;
       const vsink=new lib.VideoSampleSink(it.vt);
       try{
         for await (const sample of vsink.samples(c.trimStart,c.trimEnd)){
           if(xport.cancel){sample.close();throw new Error('已取消');}
+          /* samples() 可能多吐一格超過 trimEnd 的畫面，放行的話會和下一段
+             的時間戳重疊，mediabunny 會直接拒收整個輸出 */
+          if(sample.timestamp>=c.trimEnd){sample.close();over++;continue;}
           const t=base+Math.max(0,sample.timestamp-c.trimStart);
           if(cap){
             const slot=Math.floor((t+1e-6)*cap);
@@ -1401,14 +1420,14 @@ const xport={
         throw e;
       }
       const took=(performance.now()-tStart)/1000;
-      dbg.add(`[${i+1}] 影像完成 ${n} 格${skipped?('，跳過 '+skipped+' 格'):''}，耗時 ${took.toFixed(1)}s（${(len/took).toFixed(2)} 倍速）`);
+      dbg.add(`[${i+1}] 影像完成 ${n} 格${skipped?('，降幀跳過 '+skipped+' 格'):''}${over?('，超出裁切範圍丟棄 '+over+' 格'):''}，耗時 ${took.toFixed(1)}s（${(len/took).toFixed(2)} 倍速）`);
       base+=len;
     }
 
     vsrc.close();if(au&&au.src)au.src.close();
     dbg.add('編碼完成，收尾中…');
     await out.finalize();
-    return {snapped:0};
+    return {snapped:0,realLen:base};
   },
 
   progress(p,label){
@@ -1474,13 +1493,19 @@ const xport={
       dbg.add('全部完成，耗時 '+secs.toFixed(1)+'s，成品 '+(blob.size/1048576).toFixed(1)+'MB');
       ui.showResult(blob,'video/mp4');
       const total=totalLen();
+      const realLen=res.realLen||total;
       let msg='完成，'+(blob.size/1048576).toFixed(1)+' MB，花了 '+secs.toFixed(1)+' 秒';
-      if(total>0)msg+='（影片長 '+fmt(total)+'，約 '+(total/secs).toFixed(1)+' 倍速）';
+      if(realLen>0)msg+='（影片長 '+fmt(realLen)+'，約 '+(realLen/secs).toFixed(1)+' 倍速）';
       if(mode==='fast'){
         msg+='。字幕沒有燒進畫面，記得另外下載 SRT。';
-        if(res.snapped)msg+='　有 '+res.snapped+' 段的起點被移到最近的關鍵影格。';
+        if(res.snapped){
+          msg+='　有 '+res.snapped+' 段的起點被移到最近的關鍵影格，成品比預期長 '
+            +(realLen-total).toFixed(1)+' 秒';
+          if(state.subs.length)msg+='，所以 SRT 的時間會對不上，要精準對齊請改用重新編碼';
+          msg+='。';
+        }
       }else if(state.mode==='fast')msg+='。這次是用重新編碼跑的。';
-      ui.expStatus(msg,'ok');
+      ui.expStatus(msg,res.snapped&&state.subs.length?'warn':'ok');
     }catch(e){
       dbg.add('!!! 失敗：'+(e.name||'Error')+' — '+e.message);
       if(e.stack)dbg.add('堆疊：'+String(e.stack).split('\n').slice(0,4).join(' / '));

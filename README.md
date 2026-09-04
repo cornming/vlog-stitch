@@ -152,6 +152,18 @@ state              單一狀態物件：clips[]、subs[]、樣式與輸出設定
 
 ---
 
+## 測試
+
+`test/` 底下有一套用**真影片**跑的端對端測試，直接從 `index.html` 抽出主程式，
+接上 Node 版 mediabunny 執行，測的就是會上線的那份程式碼。
+
+```bash
+cd test && npm install && ./run.sh
+```
+
+測試素材的三段各用 300／600／900Hz 的音調，所以可以用頻譜直接驗證接續順序和
+聲音同步。細節見 `test/README.md`。
+
 ## 之後可以做的
 
 - [ ] 把 xport 也搬進 Worker，重新編碼時畫面就不會頓

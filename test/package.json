@@ -1,0 +1,11 @@
+{
+  "name": "vlog-stitch-test",
+  "private": true,
+  "description": "用真的影片檔驗證 index.html 裡的匯出引擎",
+  "scripts": { "test": "./run.sh" },
+  "dependencies": {
+    "mediabunny": "^1",
+    "@mediabunny/server": "^1",
+    "@napi-rs/canvas": "^0.1"
+  }
+}
