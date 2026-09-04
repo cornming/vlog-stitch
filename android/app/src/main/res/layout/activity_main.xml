@@ -130,11 +130,26 @@
                             android:layout_width="match_parent" android:layout_height="wrap_content"
                             android:paddingTop="9dp" android:textSize="13sp"
                             android:textColor="@color/dim" android:text="@string/ready" />
-                        <TextView android:id="@+id/logToggle"
-                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        <LinearLayout android:layout_width="match_parent"
+                            android:layout_height="wrap_content" android:orientation="horizontal"
                             android:paddingTop="10dp" android:paddingBottom="4dp"
-                            android:textColor="@color/accent" android:textSize="13sp"
-                            android:text="@string/show_log" />
+                            android:gravity="center_vertical">
+                            <TextView android:id="@+id/logToggle"
+                                android:layout_width="0dp" android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:textColor="@color/accent" android:textSize="13sp"
+                                android:text="@string/show_log" />
+                            <com.google.android.material.button.MaterialButton android:id="@+id/btnCopyLog"
+                                style="@style/Widget.Material3.Button.TextButton"
+                                android:layout_width="wrap_content" android:layout_height="38dp"
+                                android:minWidth="0dp" android:insetTop="0dp" android:insetBottom="0dp"
+                                android:textSize="13sp" android:text="@string/copy_log" />
+                            <com.google.android.material.button.MaterialButton android:id="@+id/btnSaveLog"
+                                style="@style/Widget.Material3.Button.TextButton"
+                                android:layout_width="wrap_content" android:layout_height="38dp"
+                                android:minWidth="0dp" android:insetTop="0dp" android:insetBottom="0dp"
+                                android:textSize="13sp" android:text="@string/save_log" />
+                        </LinearLayout>
                         <ScrollView android:id="@+id/logScroll"
                             android:layout_width="match_parent" android:layout_height="180dp"
                             android:visibility="gone" android:background="@color/ink"
@@ -142,7 +157,8 @@
                             <TextView android:id="@+id/log"
                                 android:layout_width="match_parent" android:layout_height="wrap_content"
                                 android:fontFamily="monospace" android:textSize="11sp"
-                                android:textColor="@color/dim" android:lineSpacingMultiplier="1.4" />
+                                android:textColor="@color/dim" android:lineSpacingMultiplier="1.4"
+                                android:textIsSelectable="true" />
                         </ScrollView>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>

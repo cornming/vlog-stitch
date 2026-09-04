@@ -78,6 +78,8 @@ class MainActivity : AppCompatActivity() {
         b.btnPick.setOnClickListener { pick.launch(arrayOf("video/*")) }
         b.btnExport.setOnClickListener { if (busy) cancelExport() else startExport() }
         b.logToggle.setOnClickListener { toggleLog() }
+        b.btnCopyLog.setOnClickListener { copyLog() }
+        b.btnSaveLog.setOnClickListener { saveLog() }
         b.btnPlay.setOnClickListener { lastOutput?.let { openVideo(it) } }
         b.btnShare.setOnClickListener { lastOutput?.let { shareVideo(it) } }
 
@@ -172,6 +174,37 @@ class MainActivity : AppCompatActivity() {
         val show = b.logScroll.visibility != View.VISIBLE
         b.logScroll.visibility = if (show) View.VISIBLE else View.GONE
         b.logToggle.setText(if (show) R.string.hide_log else R.string.show_log)
+    }
+
+    private fun logText() = b.log.text.toString()
+
+    private fun copyLog() {
+        val t = logText()
+        if (t.isBlank()) { toast(getString(R.string.log_empty)); return }
+        val cm = getSystemService(android.content.ClipboardManager::class.java)
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("vlog-stitch log", t))
+        toast(getString(R.string.log_copied))
+    }
+
+    /** 記錄很長時剪貼簿可能塞不下，另外給一個存檔＋分享的出口 */
+    private fun saveLog() {
+        val t = logText()
+        if (t.isBlank()) { toast(getString(R.string.log_empty)); return }
+        try {
+            val dir = getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)!!
+            dir.mkdirs()
+            val f = File(dir, "vlog-stitch-log.txt")
+            f.writeText(t)
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", f)
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }, getString(R.string.save_log)))
+        } catch (e: Exception) {
+            toast("存檔失敗：${e.message}")
+        }
     }
 
     private fun log(line: String) {

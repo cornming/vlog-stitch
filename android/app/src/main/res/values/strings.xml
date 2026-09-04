@@ -42,6 +42,11 @@
     <string name="go_settings">前往設定</string>
     <string name="thumb_desc">影片縮圖</string>
     <string name="drag_desc">長按拖曳可調整順序</string>
+    <string name="copy_log">複製</string>
+    <string name="save_log">存檔</string>
+    <string name="log_copied">記錄已複製</string>
+    <string name="log_empty">還沒有記錄</string>
+    <string name="log_saved">記錄已存到下載資料夾</string>
     <string name="result">成品</string>
     <string name="result_fmt">%1$s　匯出花了 %2$.1f 秒　已存進相簿</string>
     <string name="play">播放</string>
