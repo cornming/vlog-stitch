@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/action_mode" android:title="@string/export_mode"
+        android:showAsAction="never" />
+    <item android:id="@+id/action_clear" android:title="@string/clear_all"
+        android:showAsAction="never" />
     <item android:id="@+id/action_check_update" android:title="@string/check_update"
         android:showAsAction="never" />
     <item android:id="@+id/action_history" android:title="@string/update_history"

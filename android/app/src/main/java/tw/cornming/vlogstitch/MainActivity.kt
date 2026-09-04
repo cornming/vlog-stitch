@@ -1,10 +1,10 @@
 package tw.cornming.vlogstitch
 
 import android.content.Intent
-import android.media.MediaMetadataRetriever
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
-import android.provider.OpenableColumns
+import android.util.LruCache
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
@@ -17,6 +17,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.Dispatchers
@@ -26,7 +27,11 @@ import tw.cornming.vlogstitch.databinding.ActivityMainBinding
 import tw.cornming.vlogstitch.databinding.ItemClipBinding
 import java.io.File
 
-data class Clip(val uri: Uri, var name: String, var durationMs: Long = 0L)
+class Clip(val uri: Uri) {
+    var name: String = uri.lastPathSegment ?: "?"
+    var info: Media.Info = Media.Info()
+    val durationMs: Long get() = info.durationMs
+}
 
 @UnstableApi
 class MainActivity : AppCompatActivity() {
@@ -36,6 +41,11 @@ class MainActivity : AppCompatActivity() {
     private val adapter = ClipAdapter()
     private var exporter: Exporter? = null
     private var busy = false
+    private var mode = Exporter.Mode.AUTO
+    private var lastOutput: Uri? = null
+
+    private val thumbs = object : LruCache<String, Bitmap>(24) {}
+    private lateinit var touchHelper: ItemTouchHelper
 
     private val pick = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -48,11 +58,10 @@ class MainActivity : AppCompatActivity() {
                 )
             } catch (_: Exception) {
             }
-            clips.add(Clip(uri, uri.lastPathSegment ?: "?"))
+            clips.add(Clip(uri))
         }
         adapter.notifyDataSetChanged()
-        refresh()
-        loadMeta()
+        refresh(); loadMeta(); save()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -64,18 +73,36 @@ class MainActivity : AppCompatActivity() {
         b.list.layoutManager = LinearLayoutManager(this)
         b.list.adapter = adapter
         b.list.isNestedScrollingEnabled = false
+        attachDrag()
 
         b.btnPick.setOnClickListener { pick.launch(arrayOf("video/*")) }
         b.btnExport.setOnClickListener { if (busy) cancelExport() else startExport() }
         b.logToggle.setOnClickListener { toggleLog() }
-        b.modeGroup.setOnCheckedStateChangeListener { _, _ -> updateModeHint() }
+        b.btnPlay.setOnClickListener { lastOutput?.let { openVideo(it) } }
+        b.btnShare.setOnClickListener { lastOutput?.let { shareVideo(it) } }
 
         b.version.text = getString(R.string.version_fmt, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
-        updateModeHint()
+        mode = Store.mode(this)
+        restore()
         refresh()
-
         checkUpdate(silent = true)
     }
+
+    // ---------------- 片段的存與取 ----------------
+
+    private fun save() = Store.save(this, clips.map { it.uri })
+
+    private fun restore() {
+        val saved = Store.load(this)
+        if (saved.isEmpty()) return
+        saved.forEach { clips.add(Clip(it)) }
+        adapter.notifyDataSetChanged()
+        loadMeta()
+        toast(getString(R.string.restored, saved.size))
+    }
+
+    private fun toast(msg: String) =
+        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
     // ---------------- 畫面 ----------------
 
@@ -84,11 +111,11 @@ class MainActivity : AppCompatActivity() {
         b.btnExport.isEnabled = clips.isNotEmpty() || busy
         b.count.text = getString(R.string.clip_count, clips.size)
         val total = clips.sumOf { it.durationMs }
-        b.total.text = fmt(total)
+        b.total.text = Media.fmtDuration(total)
         drawTrack(total)
+        updateBanner()
     }
 
-    /** 依各段長度比例畫出時間軸，跟網頁版一樣 */
     private fun drawTrack(total: Long) {
         b.track.removeAllViews()
         if (total <= 0L) return
@@ -103,21 +130,43 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun fmt(ms: Long): String {
-        val s = ms / 1000
-        return if (s >= 3600) String.format("%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60)
-        else String.format("%d:%02d", s / 60, s % 60)
+    /** 把「轉封裝還是重新編碼」翻譯成使用者在意的後果 */
+    private fun updateBanner() {
+        if (clips.isEmpty()) { b.banner.visibility = View.GONE; return }
+        b.banner.visibility = View.VISIBLE
+        val infos = clips.map { it.info }
+        if (infos.any { it.videoMime == null && it.error == null }) {
+            b.banner.setBackgroundResource(R.drawable.banner_warn)
+            b.bannerTitle.setTextColor(ContextCompat.getColor(this, R.color.dim))
+            b.bannerTitle.text = getString(R.string.banner_checking)
+            b.bannerBody.text = ""
+            return
+        }
+        val blocker = Media.transmuxBlocker(infos)
+        val total = Media.fmtDuration(clips.sumOf { it.durationMs })
+        if (blocker == null && mode != Exporter.Mode.REENCODE_SDR) {
+            b.banner.setBackgroundResource(R.drawable.banner_ok)
+            b.bannerTitle.setTextColor(ContextCompat.getColor(this, R.color.ok))
+            b.bannerTitle.text = getString(R.string.banner_ok)
+            b.bannerBody.text = getString(R.string.banner_ok_body, clips.size, total)
+        } else {
+            b.banner.setBackgroundResource(R.drawable.banner_warn)
+            b.bannerTitle.setTextColor(ContextCompat.getColor(this, R.color.accent))
+            b.bannerTitle.text = getString(R.string.banner_warn)
+            b.bannerBody.text = getString(
+                R.string.banner_warn_body,
+                blocker ?: getString(R.string.mode_forced, modeLabel())
+            )
+        }
     }
 
-    private fun updateModeHint() {
-        b.modeHint.setText(
-            when {
-                b.modeMux.isChecked -> R.string.hint_mux
-                b.modeEnc.isChecked -> R.string.hint_enc
-                else -> R.string.hint_auto
-            }
-        )
-    }
+    private fun modeLabel() = getString(
+        when (mode) {
+            Exporter.Mode.TRANSMUX_ONLY -> R.string.mode_mux
+            Exporter.Mode.REENCODE_SDR -> R.string.mode_enc
+            else -> R.string.mode_auto
+        }
+    )
 
     private fun toggleLog() {
         val show = b.logScroll.visibility != View.VISIBLE
@@ -132,22 +181,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 檔名與長度在背景讀，不擋畫面 */
     private fun loadMeta() {
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 clips.forEach { c ->
-                    if (c.durationMs > 0L) return@forEach
-                    c.name = displayName(c.uri)
-                    c.durationMs = try {
-                        MediaMetadataRetriever().use { r ->
-                            r.setDataSource(this@MainActivity, c.uri)
-                            r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                                ?.toLongOrNull() ?: 0L
-                        }
-                    } catch (e: Exception) {
-                        0L
-                    }
+                    if (c.info.durationMs > 0L || c.info.error != null) return@forEach
+                    c.name = Media.displayName(this@MainActivity, c.uri)
+                    c.info = Media.probe(this@MainActivity, c.uri)
                 }
             }
             adapter.notifyDataSetChanged()
@@ -155,32 +195,51 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun displayName(uri: Uri): String = try {
-        contentResolver.query(uri, null, null, null, null)?.use { c ->
-            val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (i >= 0 && c.moveToFirst()) c.getString(i) else uri.lastPathSegment ?: "?"
-        } ?: (uri.lastPathSegment ?: "?")
-    } catch (e: Exception) {
-        uri.lastPathSegment ?: "?"
+    // ---------------- 拖曳排序 ----------------
+
+    private fun attachDrag() {
+        touchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
+        ) {
+            override fun isLongPressDragEnabled() = false
+
+            override fun onMove(
+                rv: RecyclerView,
+                vh: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean {
+                val from = vh.bindingAdapterPosition
+                val to = target.bindingAdapterPosition
+                if (from < 0 || to < 0 || busy) return false
+                val item = clips.removeAt(from)
+                clips.add(to, item)
+                adapter.notifyItemMoved(from, to)
+                return true
+            }
+
+            override fun onSwiped(vh: RecyclerView.ViewHolder, dir: Int) {}
+
+            override fun clearView(rv: RecyclerView, vh: RecyclerView.ViewHolder) {
+                super.clearView(rv, vh)
+                adapter.notifyDataSetChanged()
+                refresh(); save()
+            }
+        })
+        touchHelper.attachToRecyclerView(b.list)
     }
 
     // ---------------- 匯出 ----------------
 
     private fun startExport() {
         busy = true
+        lastOutput = null
+        b.resultCard.visibility = View.GONE
         b.btnExport.text = getString(R.string.stop)
         b.btnPick.isEnabled = false
-        b.modeGroup.isEnabled = false
         b.progress.progress = 0
         b.log.text = ""
-        if (b.logScroll.visibility != View.VISIBLE) toggleLog()
         log("開始匯出")
 
-        val mode = when {
-            b.modeMux.isChecked -> Exporter.Mode.TRANSMUX_ONLY
-            b.modeEnc.isChecked -> Exporter.Mode.REENCODE_SDR
-            else -> Exporter.Mode.AUTO
-        }
         val ex = Exporter(this)
         exporter = ex
         ex.start(clips.map { it.uri }, mode, object : Exporter.Callback {
@@ -205,6 +264,15 @@ class MainActivity : AppCompatActivity() {
                     b.progress.isIndeterminate = false
                     b.progress.progress = 100
                     b.status.text = getString(R.string.done_fmt, millis / 1000.0)
+                    lastOutput = outputUri
+                    if (outputUri != null) {
+                        b.resultCard.visibility = View.VISIBLE
+                        b.resultName.text = getString(
+                            R.string.result_fmt,
+                            Media.fmtDuration(clips.sumOf { it.durationMs }),
+                            millis / 1000.0
+                        )
+                    }
                     finishExport()
                 }
             }
@@ -214,6 +282,7 @@ class MainActivity : AppCompatActivity() {
                     b.progress.isIndeterminate = false
                     b.status.text = getString(R.string.failed_fmt, message)
                     log("失敗：$message")
+                    if (b.logScroll.visibility != View.VISIBLE) toggleLog()
                     finishExport()
                 }
             }
@@ -233,11 +302,30 @@ class MainActivity : AppCompatActivity() {
         exporter = null
         b.btnExport.text = getString(R.string.export)
         b.btnPick.isEnabled = true
-        b.modeGroup.isEnabled = true
         refresh()
     }
 
-    // ---------------- 更新 ----------------
+    private fun openVideo(uri: Uri) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "video/mp4")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+        } catch (e: Exception) {
+            toast("找不到可以播放的 App")
+        }
+    }
+
+    private fun shareVideo(uri: Uri) {
+        val i = Intent(Intent.ACTION_SEND).apply {
+            type = "video/mp4"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(i, getString(R.string.share)))
+    }
+
+    // ---------------- 選單 ----------------
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.main, menu)
@@ -245,12 +333,48 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
+        R.id.action_mode -> { pickMode(); true }
+        R.id.action_clear -> { clearAll(); true }
         R.id.action_check_update -> { checkUpdate(silent = false); true }
         R.id.action_history -> {
             startActivity(Intent(this, UpdateHistoryActivity::class.java)); true
         }
         else -> super.onOptionsItemSelected(item)
     }
+
+    private fun pickMode() {
+        val labels = arrayOf(
+            getString(R.string.mode_auto), getString(R.string.mode_mux), getString(R.string.mode_enc)
+        )
+        val values = arrayOf(
+            Exporter.Mode.AUTO, Exporter.Mode.TRANSMUX_ONLY, Exporter.Mode.REENCODE_SDR
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.mode_dialog)
+            .setSingleChoiceItems(labels, values.indexOf(mode)) { d, which ->
+                mode = values[which]
+                Store.setMode(this, mode)
+                refresh()
+                d.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun clearAll() {
+        if (clips.isEmpty() || busy) return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.clear_all)
+            .setMessage(getString(R.string.clip_count, clips.size))
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                clips.clear(); adapter.notifyDataSetChanged(); refresh(); save()
+                b.resultCard.visibility = View.GONE
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    // ---------------- 更新 ----------------
 
     private fun checkUpdate(silent: Boolean) {
         lifecycleScope.launch {
@@ -280,20 +404,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * 自己把 APK 拉下來再叫安裝，過程全部寫進記錄。
-     * 先前交給系統 DownloadManager，失敗時看不到任何原因。
-     */
     private fun downloadUpdate(r: Release) {
         val url = r.apkUrl
-        if (url == null) {
-            log("這一版沒有附 APK，改開發佈頁")
-            openInBrowser(r.pageUrl)
-            return
-        }
+        if (url == null) { openInBrowser(r.pageUrl); return }
         if (b.logScroll.visibility != View.VISIBLE) toggleLog()
 
-        // 沒有這個權限，安裝畫面按下去會直接被擋掉，先問
         if (!Updater.canInstall(this)) {
             AlertDialog.Builder(this)
                 .setTitle(R.string.need_install_perm)
@@ -312,25 +427,16 @@ class MainActivity : AppCompatActivity() {
             b.progress.isIndeterminate = false
             b.progress.progress = 0
             b.status.text = getString(R.string.downloading)
-            log("準備下載 $name")
             try {
-                val f = Updater.download(
-                    this@MainActivity, url, name,
-                    log = { line -> log(line) },
-                    onProgress = { pct, got, total ->
-                        runOnUiThread {
-                            b.progress.progress = pct
-                            b.status.text = getString(
-                                R.string.downloading_fmt, pct,
-                                got / 1048576.0, total / 1048576.0
-                            )
-                        }
+                val f = Updater.download(this@MainActivity, url, name, { line -> log(line) }) { pct, got, total ->
+                    runOnUiThread {
+                        b.progress.progress = pct
+                        b.status.text = getString(R.string.downloading_fmt, pct,
+                            got / 1048576.0, total / 1048576.0)
                     }
-                )
-                b.status.text = getString(R.string.download_ok)
-                if (!Updater.install(this@MainActivity, f, { line -> log(line) })) {
-                    offerBrowser(r)
                 }
+                b.status.text = getString(R.string.download_ok)
+                if (!Updater.install(this@MainActivity, f) { line -> log(line) }) offerBrowser(r)
             } catch (e: Exception) {
                 log("下載失敗：${e.javaClass.simpleName} ${e.message}")
                 b.status.text = getString(R.string.download_failed)
@@ -348,10 +454,9 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    /** 用選擇器開，才不會被某個 App 的內建瀏覽器直接接走 */
     private fun openInBrowser(url: String) {
-        val i = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-        startActivity(Intent.createChooser(i, getString(R.string.open_browser)))
+        startActivity(Intent.createChooser(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)), getString(R.string.open_browser)))
     }
 
     // ---------------- 片段清單 ----------------
@@ -368,22 +473,43 @@ class MainActivity : AppCompatActivity() {
             val c = clips[pos]
             h.v.ord.text = (pos + 1).toString()
             h.v.name.text = c.name
-            h.v.meta.text = if (c.durationMs > 0) fmt(c.durationMs) else "讀取中…"
-            h.v.up.isEnabled = pos > 0
-            h.v.down.isEnabled = pos < clips.size - 1
-            h.v.up.setOnClickListener { move(pos, -1) }
-            h.v.down.setOnClickListener { move(pos, 1) }
+            h.v.meta.text = when {
+                c.info.error != null -> c.info.error
+                c.durationMs > 0 -> buildString {
+                    append(Media.fmtDuration(c.durationMs))
+                    if (c.info.width > 0) append("　${c.info.width}×${c.info.height}")
+                    if (c.info.isHdr) append("　HDR")
+                }
+                else -> "讀取中…"
+            }
             h.v.remove.setOnClickListener {
-                clips.removeAt(pos); notifyDataSetChanged(); refresh()
+                val p = h.bindingAdapterPosition
+                if (p >= 0) { clips.removeAt(p); notifyDataSetChanged(); refresh(); save() }
+            }
+            h.v.drag.setOnTouchListener { _, ev ->
+                if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN && !busy)
+                    touchHelper.startDrag(h)
+                false
+            }
+            bindThumb(h, c)
+        }
+
+        private fun bindThumb(h: VH, c: Clip) {
+            val key = c.uri.toString()
+            val cached = thumbs.get(key)
+            if (cached != null) { h.v.thumb.setImageBitmap(cached); return }
+            h.v.thumb.setImageBitmap(null)
+            lifecycleScope.launch {
+                val bmp = withContext(Dispatchers.IO) {
+                    Media.thumb(this@MainActivity, c.uri, 216, 156)
+                }
+                if (bmp != null) {
+                    thumbs.put(key, bmp)
+                    if (h.bindingAdapterPosition >= 0 &&
+                        clips.getOrNull(h.bindingAdapterPosition)?.uri == c.uri
+                    ) h.v.thumb.setImageBitmap(bmp)
+                }
             }
         }
-    }
-
-    private fun move(pos: Int, d: Int) {
-        val j = pos + d
-        if (j < 0 || j >= clips.size) return
-        val tmp = clips[pos]; clips[pos] = clips[j]; clips[j] = tmp
-        adapter.notifyDataSetChanged()
-        refresh()
     }
 }
