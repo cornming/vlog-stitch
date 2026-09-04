@@ -121,6 +121,9 @@ details.note{margin-top:10px;border:1px solid var(--line);border-radius:10px;pad
 details.note summary{font-size:13px;font-weight:600;color:var(--dim);cursor:pointer}
 details.note p,details.note li{font-size:13px;color:var(--dim);line-height:1.65}
 details.note ul{padding-left:18px;margin:8px 0 0}
+#logBox{margin:0;max-height:44vh;overflow:auto;background:var(--bg);border:1px solid var(--line);
+  border-radius:9px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:11px;line-height:1.55;color:var(--dim);white-space:pre-wrap;word-break:break-word}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -238,6 +241,17 @@ details.note ul{padding-left:18px;margin:8px 0 0}
     </div>
 
     <div class="card" id="result" hidden></div>
+
+    <details class="note" id="logPanel">
+      <summary>診斷記錄</summary>
+      <p class="muted" style="margin:8px 0 0">匯出出問題時，把這裡的內容複製給我，我才看得到是哪一段、哪一格出錯。</p>
+      <div class="row" style="gap:7px;margin:9px 0">
+        <button class="btn small" onclick="dbg.copy()">複製</button>
+        <button class="btn small" onclick="dbg.save()">存成檔案</button>
+        <button class="btn small" onclick="dbg.reset()">清空</button>
+      </div>
+      <pre id="logBox"></pre>
+    </details>
 
     <details class="note" open>
       <summary>匯出前一定要知道的事</summary>
@@ -957,10 +971,59 @@ function sameBytes(a,b){
   return true;
 }
 
-const xport={
-  busy:false,cancel:false,wake:null,
+/* ============================================================
+   診斷記錄：出問題時要看的東西都往這裡丟
+   ============================================================ */
+const dbg={
+  lines:[],t0:0,
+  reset(){dbg.lines=[];dbg.t0=performance.now();dbg.render();},
+  add(msg){
+    const t=((performance.now()-dbg.t0)/1000).toFixed(1);
+    dbg.lines.push('['+t.padStart(6)+'s] '+msg);
+    if(dbg.lines.length>1200)dbg.lines.splice(0,300);
+    dbg.render();
+  },
+  async env(){
+    dbg.add('接片室診斷記錄 '+new Date().toISOString());
+    dbg.add('UA: '+navigator.userAgent);
+    dbg.add('螢幕 '+screen.width+'x'+screen.height+' dpr'+(window.devicePixelRatio||1));
+    dbg.add('WebCodecs='+(mb.supported()?'有':'沒有')
+      +'  OPFS='+((navigator.storage&&navigator.storage.getDirectory)?'有':'沒有')
+      +'  WebGPU='+(navigator.gpu?'有':'沒有'));
+    if(navigator.deviceMemory)dbg.add('裝置記憶體約 '+navigator.deviceMemory+'GB');
+    if(navigator.hardwareConcurrency)dbg.add('CPU 執行緒 '+navigator.hardwareConcurrency);
+    try{
+      if(navigator.storage&&navigator.storage.estimate){
+        const q=await navigator.storage.estimate();
+        dbg.add('儲存配額 '+(q.quota/1073741824).toFixed(1)+'GB，已用 '+(q.usage/1048576).toFixed(0)+'MB');
+      }
+    }catch(e){}
+  },
+  render(){
+    const el=$('logBox');
+    if(!el)return;
+    el.textContent=dbg.lines.length?dbg.lines.join('\n'):'還沒有記錄。按下匯出後這裡會出現每一步的細節。';
+    el.scrollTop=el.scrollHeight;
+  },
+  text(){return dbg.lines.join('\n');},
+  async copy(){
+    if(!dbg.lines.length){ui.toast('還沒有記錄');return;}
+    try{await navigator.clipboard.writeText(dbg.text());ui.toast('診斷記錄已複製');}
+    catch(e){ui.toast('複製失敗，可以改用「存成檔案」');}
+  },
+  save(){
+    if(!dbg.lines.length){ui.toast('還沒有記錄');return;}
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([dbg.text()],{type:'text/plain;charset=utf-8'}));
+    a.download='vlog-stitch-log.txt';a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  }
+};
 
-  stop(){xport.cancel=true;engine.cancel=true;},
+const xport={
+  busy:false,cancel:false,wake:null,ranMode:'',
+
+  stop(){xport.cancel=true;engine.cancel=true;dbg.add('使用者按下停止');},
 
   async openAll(lib){
     const out=[];
@@ -978,7 +1041,61 @@ const xport={
     return out;
   },
 
-  /* 檢查能不能免重新編碼直接接起來 */
+  /* 逐段把規格記下來，並確認解碼器真的吃得下 */
+  async preflight(lib,list,mode){
+    const problems=[];
+    dbg.add('--- 素材檢查（共 '+list.length+' 段）---');
+    for(let i=0;i<list.length;i++){
+      const it=list[i],c=it.clip;
+      let fps='?';
+      try{fps=(await it.vt.computeFrameRateMetrics()).bestGuessFrameRate;}catch(e){}
+      let rot=0;try{rot=await it.vt.getRotation();}catch(e){}
+      let vOk=null;try{vOk=await it.vt.canDecode();}catch(e){vOk='錯誤:'+e.message;}
+      let aOk=null;
+      if(it.at){try{aOk=await it.at.canDecode();}catch(e){aOk='錯誤:'+e.message;}}
+
+      dbg.add(`[${i+1}] ${c.name}`);
+      dbg.add(`    檔案 ${(c.file.size/1048576).toFixed(1)}MB  型態 ${c.file.type||'未知'}`);
+      dbg.add(`    影像 ${it.vcfg.codec}  ${it.vcfg.codedWidth}x${it.vcfg.codedHeight}  旋轉${rot}°  ${fps}fps  可解碼=${vOk}`);
+      dbg.add(`    描述位元組 ${it.vcfg.description?('長度'+new Uint8Array(it.vcfg.description.buffer||it.vcfg.description).length):'無'}`);
+      if(it.acfg)dbg.add(`    聲音 ${it.acfg.codec}  ${it.acfg.sampleRate}Hz  ${it.acfg.numberOfChannels}ch  可解碼=${aOk}`);
+      else dbg.add(`    聲音 無`);
+      dbg.add(`    裁切 ${c.trimStart.toFixed(2)}s → ${c.trimEnd.toFixed(2)}s（共 ${clipLen(c).toFixed(2)}s）`);
+
+      if(mode==='encode'){
+        if(vOk!==true)problems.push(`第 ${i+1} 段「${c.name}」的影像（${shortCodec(it.vcfg.codec)}）這台裝置解不開`);
+        if(it.at&&aOk!==true)problems.push(`第 ${i+1} 段「${c.name}」的聲音（${shortCodec(it.acfg.codec)}）這台裝置解不開`);
+      }
+    }
+    return problems;
+  },
+
+  /* 輸出目的地：優先寫進 OPFS（不吃記憶體），失敗才退回全部塞記憶體 */
+  async makeTarget(lib){
+    try{
+      if(navigator.storage&&navigator.storage.getDirectory&&lib.StreamTarget){
+        const root=await navigator.storage.getDirectory();
+        const name='vlog-stitch-out.mp4';
+        const fh=await root.getFileHandle(name,{create:true});
+        const writable=await fh.createWritable();
+        dbg.add('輸出目的地：OPFS 檔案（串流寫入，不佔記憶體）');
+        return {
+          target:new lib.StreamTarget(writable,{chunked:true}),
+          async finish(){
+            const f=await fh.getFile();
+            dbg.add('OPFS 檔案大小 '+(f.size/1048576).toFixed(1)+'MB');
+            return f;
+          }
+        };
+      }
+    }catch(e){
+      dbg.add('OPFS 不能用（'+e.message+'），改用記憶體');
+    }
+    dbg.add('輸出目的地：記憶體（長片可能不夠用）');
+    const target=new lib.BufferTarget();
+    return {target,async finish(){return new Blob([target.buffer],{type:'video/mp4'});}};
+  },
+
   checkCompat(list){
     const a=list[0];
     for(let i=1;i<list.length;i++){
@@ -1000,10 +1117,12 @@ const xport={
   },
 
   /* ---------- 模式一：轉封裝，不重新編碼 ---------- */
-  async remux(lib,list){
+  async remux(lib,list,dest){
     const first=list[0];
-    const out=new lib.Output({format:new lib.Mp4OutputFormat(),target:new lib.BufferTarget()});
-    const vsrc=new lib.EncodedVideoPacketSource(shortCodec(first.vcfg.codec));
+    const out=new lib.Output({format:new lib.Mp4OutputFormat(),target:dest.target});
+    const vcodec=shortCodec(first.vcfg.codec);
+    dbg.add('轉封裝，影像 '+vcodec+(first.acfg?('，聲音 '+shortCodec(first.acfg.codec)):'，無聲音'));
+    const vsrc=new lib.EncodedVideoPacketSource(vcodec);
     out.addVideoTrack(vsrc);
     const asrc=first.acfg?new lib.EncodedAudioPacketSource(shortCodec(first.acfg.codec)):null;
     if(asrc)out.addAudioTrack(asrc);
@@ -1011,25 +1130,28 @@ const xport={
 
     let offset=0,vFirst=true,aFirst=true,total=totalLen(),snapped=0;
 
-    for(const it of list){
+    for(let i=0;i<list.length;i++){
       if(xport.cancel)throw new Error('已取消');
-      const c=it.clip;
+      const it=list[i],c=it.clip;
       const vsink=new lib.EncodedPacketSink(it.vt);
       let pkt=await vsink.getKeyPacket(c.trimStart);
       if(!pkt)pkt=await vsink.getKeyPacket(0);
-      if(!pkt)throw new Error('「'+c.name+'」讀不到影像資料');
+      if(!pkt)throw new Error('「'+c.name+'」讀不到影像封包');
       const realStart=pkt.timestamp;
       if(Math.abs(realStart-c.trimStart)>0.05)snapped++;
+      dbg.add(`[${i+1}] 轉封裝起點 ${realStart.toFixed(2)}s（要求 ${c.trimStart.toFixed(2)}s），輸出位移 ${offset.toFixed(2)}s`);
 
+      let vn=0;
       while(pkt&&pkt.timestamp<c.trimEnd){
         if(xport.cancel)throw new Error('已取消');
-        const shifted=pkt.clone({timestamp:offset+(pkt.timestamp-realStart)});
-        await vsrc.add(shifted,vFirst?{decoderConfig:it.vcfg}:undefined);
-        vFirst=false;
-        xport.progress((offset+(pkt.timestamp-realStart))/total,'接片中');
+        await vsrc.add(pkt.clone({timestamp:offset+(pkt.timestamp-realStart)}),
+                       vFirst?{decoderConfig:it.vcfg}:undefined);
+        vFirst=false;vn++;
+        if((vn&31)===0)xport.progress((offset+(pkt.timestamp-realStart))/total,'接片中');
         pkt=await vsink.getNextPacket(pkt);
       }
 
+      let an=0;
       if(asrc&&it.at){
         const asink=new lib.EncodedPacketSink(it.at);
         let ap=await asink.getKeyPacket(realStart);
@@ -1038,34 +1160,36 @@ const xport={
           if(xport.cancel)throw new Error('已取消');
           await asrc.add(ap.clone({timestamp:offset+(ap.timestamp-realStart)}),
                          aFirst?{decoderConfig:it.acfg}:undefined);
-          aFirst=false;
+          aFirst=false;an++;
           ap=await asink.getNextPacket(ap);
         }
       }
+      dbg.add(`[${i+1}] 影像封包 ${vn} 個，聲音封包 ${an} 個`);
       offset+=Math.max(0,c.trimEnd-realStart);
     }
 
     vsrc.close();if(asrc)asrc.close();
+    dbg.add('封裝完成，總長 '+offset.toFixed(2)+'s，收尾中…');
     await out.finalize();
-    return {buffer:out.target.buffer,snapped};
+    return {snapped};
   },
 
   /* ---------- 模式二：重新編碼，字幕燒進畫面 ---------- */
-  async encode(lib,list){
+  async encode(lib,list,dest){
     const {w:W,h:H}=engine.outSize();
     const canvas=$('stage');
     canvas.width=W;canvas.height=H;canvas.style.aspectRatio=W+'/'+H;
     const ctx=canvas.getContext('2d',{alpha:false});
 
     const format=new lib.Mp4OutputFormat();
-    const out=new lib.Output({format,target:new lib.BufferTarget()});
+    const out=new lib.Output({format,target:dest.target});
 
     const vcodec=await lib.getFirstEncodableVideoCodec(format.getSupportedVideoCodecs(),{width:W,height:H});
-    if(!vcodec)throw new Error('這台手機沒有可用的影像編碼器');
+    if(!vcodec)throw new Error('這台裝置沒有可用的影像編碼器');
+    const bitrate=state.res>=1080?10e6:6e6;
+    dbg.add(`重新編碼 ${W}x${H}，編碼器 ${vcodec}，位元率 ${(bitrate/1e6).toFixed(0)}Mbps`);
     const vsrc=new lib.CanvasSource(canvas,{
-      codec:vcodec,
-      quality:new lib.Quality({bitrate:state.res>=1080?10e6:6e6}),
-      keyFrameInterval:2
+      codec:vcodec,quality:new lib.Quality({bitrate}),keyFrameInterval:2
     });
     out.addVideoTrack(vsrc);
 
@@ -1073,60 +1197,80 @@ const xport={
     let asrc=null;
     if(anyAudio){
       const acodec=await lib.getFirstEncodableAudioCodec(format.getSupportedAudioCodecs());
+      dbg.add('聲音編碼器 '+(acodec||'找不到，成品會沒有聲音'));
       if(acodec){
         asrc=new lib.AudioBufferSource({codec:acodec,quality:new lib.Quality('high')});
         out.addAudioTrack(asrc);
       }
-    }
+    }else dbg.add('所有片段都沒有聲音軌');
     await out.start();
 
     const total=totalLen();
     let base=0;
 
-    for(const it of list){
+    for(let i=0;i<list.length;i++){
       if(xport.cancel)throw new Error('已取消');
-      const c=it.clip,len=clipLen(c);
+      const it=list[i],c=it.clip,len=clipLen(c);
+      dbg.add(`[${i+1}] 開始解碼 ${c.trimStart.toFixed(2)}s→${c.trimEnd.toFixed(2)}s，輸出位移 ${base.toFixed(2)}s`);
 
+      let n=0,lastT=0;
       const vsink=new lib.VideoSampleSink(it.vt);
-      for await (const sample of vsink.samples(c.trimStart,c.trimEnd)){
-        if(xport.cancel){sample.close();throw new Error('已取消');}
-        const t=base+Math.max(0,sample.timestamp-c.trimStart);
-        ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
-        try{sample.drawWithFit(ctx,{fit:state.fit==='cover'?'cover':'contain'});}catch(e){}
-        const act=subs.activeAt(t);
-        if(act.length)drawSubtitle(ctx,act.map(x=>x.text).join(' '),W,H);
-        await vsrc.add(t,sample.duration||1/FPS);
-        sample.close();
-        xport.progress(t/total,'重新編碼中');
+      try{
+        for await (const sample of vsink.samples(c.trimStart,c.trimEnd)){
+          if(xport.cancel){sample.close();throw new Error('已取消');}
+          const t=base+Math.max(0,sample.timestamp-c.trimStart);
+          ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+          try{sample.drawWithFit(ctx,{fit:state.fit==='cover'?'cover':'contain'});}
+          catch(e){dbg.add(`[${i+1}] 第 ${n} 格畫不出來：${e.message}`);}
+          const act=subs.activeAt(t);
+          if(act.length)drawSubtitle(ctx,act.map(x=>x.text).join(' '),W,H);
+          await vsrc.add(t,sample.duration||1/FPS);
+          sample.close();
+          n++;lastT=t;
+          if((n&15)===0){xport.progress(t/total,'重新編碼中');await new Promise(r=>setTimeout(r,0));}
+        }
+      }catch(e){
+        dbg.add(`[${i+1}] 影像在第 ${n} 格（約 ${lastT.toFixed(2)}s）中斷：${e.name||''} ${e.message}`);
+        throw e;
       }
+      dbg.add(`[${i+1}] 影像完成 ${n} 格`);
 
       if(asrc){
         if(it.at){
+          let an=0;
           const asink=new lib.AudioSampleSink(it.at);
-          for await (const s of asink.samples(c.trimStart,c.trimEnd)){
-            if(xport.cancel){s.close();throw new Error('已取消');}
-            await asrc.add(s.toAudioBuffer());
-            s.close();
+          try{
+            for await (const s of asink.samples(c.trimStart,c.trimEnd)){
+              if(xport.cancel){s.close();throw new Error('已取消');}
+              await asrc.add(s.toAudioBuffer());
+              s.close();an++;
+            }
+          }catch(e){
+            dbg.add(`[${i+1}] 聲音在第 ${an} 塊中斷：${e.name||''} ${e.message}`);
+            throw e;
           }
+          dbg.add(`[${i+1}] 聲音完成 ${an} 塊`);
         }else{
-          /* 沒聲音的片段補等長靜音，不然後面的聲音會對不上畫面 */
           const sr=48000;
           await asrc.add(new AudioBuffer({length:Math.max(1,Math.round(len*sr)),sampleRate:sr,numberOfChannels:1}));
+          dbg.add(`[${i+1}] 沒有聲音軌，補 ${len.toFixed(2)}s 靜音`);
         }
       }
       base+=len;
     }
 
     vsrc.close();if(asrc)asrc.close();
+    dbg.add('編碼完成，收尾中…');
     await out.finalize();
-    return {buffer:out.target.buffer,snapped:0};
+    return {snapped:0};
   },
 
   progress(p,label){
     $('expBar').style.width=clamp(p*100,0,100)+'%';
     const el=$('expStatus');
     el.className='status';
-    el.textContent=label+'　'+Math.round(clamp(p*100,0,100))+'%';
+    el.textContent=label+'　'+Math.round(clamp(p*100,0,100))+'%'
+      +(xport.ranMode==='encode'&&state.mode==='fast'?'（已自動改為重新編碼）':'');
   },
 
   async run(){
@@ -1140,42 +1284,66 @@ const xport={
       state.mode='record';ui.syncModePills();return;
     }
 
-    xport.busy=true;xport.cancel=false;
+    xport.busy=true;xport.cancel=false;xport.ranMode='';
     $('result').hidden=true;
+    dbg.reset();
     ui.setDock();
     const t0=performance.now();
     try{
+      await dbg.env();
+      dbg.add('選擇的模式：'+state.mode+'，片段 '+state.clips.length+' 段，總長 '+totalLen().toFixed(1)+'s');
+      const inMB=state.clips.reduce((a,c)=>a+(c.file.size||0),0)/1048576;
+      dbg.add('素材總大小 '+inMB.toFixed(1)+'MB');
+      if(totalLen()>600)dbg.add('注意：成品超過 10 分鐘，手機資源會很吃緊');
+
       try{if('wakeLock'in navigator)xport.wake=await navigator.wakeLock.request('screen');}catch(e){}
       ui.expStatus('讀取影片資訊…');
       const lib=await mb.load();
+      dbg.add('mediabunny 已載入');
       const list=await xport.openAll(lib);
 
-      let res,mode=state.mode;
+      let mode=state.mode;
       if(mode==='fast'){
         const why=xport.checkCompat(list);
-        if(why){
-          ui.expStatus('沒辦法免重編碼（'+why+'），改用重新編碼。','warn');
-          mode='encode';
-        }
+        dbg.add('相容性檢查：'+(why||'通過，可以免重新編碼'));
+        if(why)mode='encode';
       }
-      res=mode==='fast'?await xport.remux(lib,list):await xport.encode(lib,list);
+      xport.ranMode=mode;
 
-      const secs=((performance.now()-t0)/1000);
-      const blob=new Blob([res.buffer],{type:'video/mp4'});
+      const problems=await xport.preflight(lib,list,mode);
+      if(problems.length){
+        problems.forEach(p=>dbg.add('阻擋：'+p));
+        throw new Error(problems[0]+(problems.length>1?('（另有 '+(problems.length-1)+' 項問題，看下方記錄）'):''));
+      }
+      dbg.add('=== 實際使用模式：'+(mode==='fast'?'快速接片':'重新編碼')+' ===');
+      if(mode==='encode'&&state.mode==='fast')
+        ui.expStatus('片段規格不一致，改用重新編碼。','warn');
+
+      const dest=await xport.makeTarget(lib);
+      const res=mode==='fast'?await xport.remux(lib,list,dest):await xport.encode(lib,list,dest);
+      const blob=await dest.finish();
+
+      const secs=(performance.now()-t0)/1000;
+      dbg.add('全部完成，耗時 '+secs.toFixed(1)+'s，成品 '+(blob.size/1048576).toFixed(1)+'MB');
       ui.showResult(blob,'video/mp4');
-      let msg='完成，'+(blob.size/1048576).toFixed(1)+' MB，花了 '+secs.toFixed(1)+' 秒';
       const total=totalLen();
+      let msg='完成，'+(blob.size/1048576).toFixed(1)+' MB，花了 '+secs.toFixed(1)+' 秒';
       if(total>0)msg+='（影片長 '+fmt(total)+'，約 '+(total/secs).toFixed(1)+' 倍速）';
       if(mode==='fast'){
-        msg+='。字幕沒有燒進畫面，記得另外下載 SRT 上傳。';
+        msg+='。字幕沒有燒進畫面，記得另外下載 SRT。';
         if(res.snapped)msg+='　有 '+res.snapped+' 段的起點被移到最近的關鍵影格。';
-      }
+      }else if(state.mode==='fast')msg+='。這次是用重新編碼跑的。';
       ui.expStatus(msg,'ok');
     }catch(e){
-      ui.expStatus(xport.cancel?'已取消匯出。':'匯出失敗：'+e.message,xport.cancel?'warn':'err');
+      dbg.add('!!! 失敗：'+(e.name||'Error')+' — '+e.message);
+      if(e.stack)dbg.add('堆疊：'+String(e.stack).split('\n').slice(0,4).join(' / '));
+      ui.expStatus(xport.cancel?'已取消匯出。':'匯出失敗：'+e.message+'（打開下面的診斷記錄看細節）',
+                   xport.cancel?'warn':'err');
+      ui.openLog();
     }finally{
       if(xport.wake){try{xport.wake.release();}catch(e){}xport.wake=null;}
       xport.busy=false;xport.cancel=false;
+      dbg.render();
       ui.setDock();
     }
   }
@@ -1332,6 +1500,7 @@ const ui={
     el.textContent=msg;
     if(cls==='ok')el.style.color='var(--ok)';else el.style.color='';
   },
+  openLog(){const p=$('logPanel');if(p)p.open=true;},
   syncModePills(){
     const box=$('modePills');
     if(box)[...box.children].forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.v===state.mode)));
@@ -1468,6 +1637,7 @@ if(!mb.supported()){
   ui.expStatus('這個瀏覽器沒有 WebCodecs，只能用即時錄製模式（匯出時間會跟影片一樣長）。','warn');
 }
 ui.syncModePills();
+dbg.render();
 ui.renderAll();
 ui.drawStylePreview();
 ui.fitStage();

@@ -58,6 +58,8 @@ python3 -m http.server 8080
 
 - 輸出 mp4，可以直接上傳 YouTube
 - 手機支援的話可以直接用系統「分享」丟進 YouTube App
+- 有可以連線的話會寫進 OPFS 檔案而不是記憶體，長片才不會爆掉
+- 匯出頁有**診斷記錄**，逐段列出編碼、解析度、可否解碼、封包數與出錯位置，可複製或存檔
 
 ---
 
@@ -66,6 +68,8 @@ python3 -m http.server 8080
 **快速接片有前提。** 所有片段的影像編碼、解析度、編碼參數必須一致，聲音的編碼、取樣率、聲道數也要一致。同一支手機用同一個 App 拍的通常沒問題，混到不同來源就不行。不符合時會自動改用重新編碼，並在畫面上說明原因。
 
 **快速接片的裁切點會對齊關鍵影格。** 因為完全沒有重新編碼，只能從關鍵影格開始切，實際起點可能比你設定的早一兩秒。匯出後會告訴你有幾段被移動過。需要精準裁切就用重新編碼模式。
+
+**手機不一定解得開 HEVC。** 不少 Android 手機預設用 H.265 錄影，但 Chrome 的 WebCodecs 對 HEVC 支援看裝置。重新編碼模式開始前會先用 `canDecode()` 檢查，解不開會直接擋下並指出是哪一段，不會跑到一半才失敗。快速接片不需要解碼，所以不受影響。
 
 **只有即時錄製模式會跑滿影片長度。** 那是 MediaRecorder 錄 canvas 的舊做法，留著當退路。匯出中都不要切到別的 App。
 
@@ -81,6 +85,7 @@ python3 -m http.server 8080
 state              單一狀態物件：clips[]、subs[]、樣式與輸出設定
 ├─ clips           片段管理：加入、探測 metadata、排序、裁切、產生播放用 video 元素
 ├─ subs            字幕資料：新增、勾選、刪除、SRT 匯入匯出、查詢某時間點的字幕
+├─ dbg             診斷記錄，出問題時唯一能看的東西
 ├─ mb / xport      WebCodecs 匯出引擎（核心，用 mediabunny）
 ├─ engine          即時預覽與 MediaRecorder 退路
 ├─ asr             Whisper 自動聽打
@@ -94,6 +99,14 @@ state              單一狀態物件：clips[]、subs[]、樣式與輸出設定
 *快速接片（`xport.remux`）*　完全不碰畫素。用 `EncodedPacketSink` 把每段的封包讀出來，`packet.clone({timestamp})` 位移時間戳，再用 `EncodedVideoPacketSource` / `EncodedAudioPacketSource` 寫進同一個 mp4。第一個封包要附上 `decoderConfig`，後面就不用。裁切用 `getKeyPacket(trimStart)` 找關鍵影格起點，所以會有對齊誤差。開跑前先用 `checkCompat()` 比對所有片段的編碼參數，包含 `description` 的位元組，不一致就擋下來改走重新編碼。
 
 *重新編碼（`xport.encode`）*　用 `VideoSampleSink.samples(start, end)` 逐格取出解碼後的畫面，`drawWithFit()` 依「留黑邊／裁切填滿」畫進 canvas，疊上該時間點的字幕，再交給 `CanvasSource.add(timestamp, duration)` 硬體編碼。聲音走 `AudioSampleSink` → `toAudioBuffer()` → `AudioBufferSource.add()`；`AudioBufferSource` 會把每個 buffer 依序接在前一個後面，所以不用自己算時間戳。**沒有聲音軌的片段會補一段等長靜音**，否則後面所有片段的聲音都會提前，畫面對不上嘴。
+
+**匯出前的預檢**
+
+`xport.preflight()` 在動工前先把每段的規格全部寫進診斷記錄：編碼字串、coded 尺寸、旋轉、fps、`description` 長度、聲音參數，以及最重要的 `canDecode()`。重新編碼模式下只要有一段解不開就直接擋下，訊息會指名是第幾段、什麼編碼，不會跑到一半才丟一句 `Decoding error`。
+
+**輸出目的地**
+
+預設寫進 OPFS（`navigator.storage.getDirectory()` → `createWritable()` → mediabunny 的 `StreamTarget`），完成後用 `getFileHandle().getFile()` 取回。這樣成品不會整個堆在 JS heap 裡——43 分鐘的 1080p 光是緩衝就好幾 GB，手機一定撐不住。環境不支援時才退回 `BufferTarget`，記錄裡會註明用的是哪一種。
 
 **engine 的運作方式（即時錄製退路）**
 
