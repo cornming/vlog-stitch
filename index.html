@@ -168,7 +168,7 @@ details.note ul{padding-left:18px;margin:8px 0 0}
         <b class="grow" style="font-size:15px">自動聽打</b>
         <span class="muted" id="asrDevice"></span>
       </div>
-      <p class="muted" style="margin:4px 0 10px">用 Whisper 在手機上直接辨識，聲音不會上傳。第一次要下載模型（約 40–150 MB），建議接 Wi-Fi。</p>
+      <p class="muted" style="margin:4px 0 10px">用 Whisper 在手機上直接辨識，聲音不會上傳。跑在背景執行緒，辨識時畫面照樣能操作，也可以隨時停。第一次要下載模型（約 40–150 MB），建議接 Wi-Fi。</p>
       <div class="row" style="gap:8px">
         <select id="asrModel" class="grow">
           <option value="Xenova/whisper-tiny">tiny — 最快，字比較容易錯</option>
@@ -182,7 +182,7 @@ details.note ul{padding-left:18px;margin:8px 0 0}
           <option value="">自動</option>
         </select>
       </div>
-      <button class="btn block" id="asrBtn" style="margin-top:10px" onclick="asr.run()">開始辨識全部片段</button>
+      <button class="btn block" id="asrBtn" style="margin-top:10px" onclick="asr.click()">開始辨識全部片段</button>
       <div class="bar"><div id="asrBar"></div></div>
       <div class="status" id="asrStatus"></div>
     </div>
@@ -249,6 +249,74 @@ details.note ul{padding-left:18px;margin:8px 0 0}
 </div>
 
 <div class="dock"><div class="wrap" id="dock"></div></div>
+
+<!-- ============================================================
+     Whisper 辨識用的 Web Worker 原始碼。
+     這段不會被瀏覽器執行（type 不是 JS），主程式讀它的 textContent，
+     包成 Blob URL 之後才用 new Worker(url,{type:'module'}) 啟動。
+     裡面的 CDN 清單要跟主程式的 TRANSFORMERS_CDN 保持一致。
+     ============================================================ -->
+<script id="asrWorkerSrc" type="text/worker">
+const CDN=[
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1',
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0',
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers'
+];
+
+let pipe=null, loaded=null;
+
+async function loadLib(){
+  let lib=null,last=null;
+  for(const url of CDN){
+    try{lib=await import(url);break;}catch(e){last=e;}
+  }
+  if(!lib)throw new Error('載入不到辨識程式庫：'+((last&&last.message)||'未知錯誤'));
+  return lib;
+}
+
+async function pickDevice(){
+  try{
+    if(self.navigator&&self.navigator.gpu){
+      const a=await self.navigator.gpu.requestAdapter();
+      if(a)return 'webgpu';
+    }
+  }catch(e){}
+  return 'wasm';
+}
+
+self.onmessage=async e=>{
+  const {id,type,payload}=e.data||{};
+  try{
+    if(type==='load'){
+      if(!pipe||loaded!==payload.model){
+        const lib=await loadLib();
+        lib.env.allowLocalModels=false;
+        const device=await pickDevice();
+        self.postMessage({id,type:'device',payload:device});
+        pipe=await lib.pipeline('automatic-speech-recognition',payload.model,{
+          dtype:'q8',
+          device,
+          progress_callback:p=>self.postMessage({id,type:'progress',payload:p})
+        });
+        loaded=payload.model;
+      }
+      self.postMessage({id,type:'done',payload:{ok:true}});
+    }
+    else if(type==='run'){
+      if(!pipe)throw new Error('模型還沒載入');
+      const opt={chunk_length_s:30,stride_length_s:5,return_timestamps:true,task:'transcribe'};
+      if(payload.lang)opt.language=payload.lang;
+      const res=await pipe(payload.pcm,opt);
+      self.postMessage({id,type:'done',payload:{text:res.text,chunks:res.chunks||null}});
+    }
+    else{
+      throw new Error('不認得的指令：'+type);
+    }
+  }catch(err){
+    self.postMessage({id,type:'error',payload:String((err&&err.message)||err)});
+  }
+};
+</script>
 
 <script>
 /* ============================================================
@@ -661,33 +729,102 @@ function pickMime(){
    自動聽打（Whisper via transformers.js）
    ============================================================ */
 const asr={
-  pipe:null,model:null,busy:false,
+  /* Worker 狀態 */
+  worker:null, workerUrl:'', useWorker:true, seq:0, jobs:new Map(),
+  /* 主執行緒退路 */
+  pipe:null, model:null,
+  busy:false, aborted:false,
 
-  async load(model){
-    if(asr.pipe&&asr.model===model)return asr.pipe;
-    let lib=null,lastErr=null;
-    for(const url of TRANSFORMERS_CDN){
-      try{lib=await import(url);break;}catch(e){lastErr=e;}
-    }
-    if(!lib)throw new Error('載入不到辨識程式庫，檢查一下網路：'+(lastErr&&lastErr.message||''));
-    lib.env.allowLocalModels=false;
-
-    let device='wasm';
-    try{if(navigator.gpu&&await navigator.gpu.requestAdapter())device='webgpu';}catch(e){}
-    $('asrDevice').textContent=device==='webgpu'?'WebGPU 加速':'CPU 運算';
-
-    asr.pipe=await lib.pipeline('automatic-speech-recognition',model,{
-      dtype:'q8',device,
-      progress_callback:p=>{
-        if(p.status==='progress'&&p.total)
-          asr.say('下載模型 '+(p.file||'').split('/').pop()+' '+Math.round(p.progress)+'%',p.progress/100);
-        else if(p.status==='ready')asr.say('模型就緒');
-      }
+  /* ---------- Worker 建立與訊息往返 ---------- */
+  makeWorker(){
+    const src=$('asrWorkerSrc').textContent;
+    asr.workerUrl=URL.createObjectURL(new Blob([src],{type:'text/javascript'}));
+    const w=new Worker(asr.workerUrl,{type:'module'});
+    w.onmessage=asr.onMessage;
+    w.onerror=e=>asr.failAll(new Error(e.message||'Worker 無法啟動'));
+    return w;
+  },
+  onMessage(e){
+    const {id,type,payload}=e.data||{};
+    if(type==='device'){asr.showDevice(payload);return;}
+    const job=asr.jobs.get(id);
+    if(!job)return;
+    if(type==='progress'){if(job.onProgress)job.onProgress(payload);return;}
+    asr.jobs.delete(id);
+    if(type==='error')job.reject(new Error(payload));
+    else job.resolve(payload);
+  },
+  call(type,payload,transfer,onProgress){
+    return new Promise((resolve,reject)=>{
+      if(!asr.worker){reject(new Error('Worker 不存在'));return;}
+      const id=++asr.seq;
+      asr.jobs.set(id,{resolve,reject,onProgress});
+      asr.worker.postMessage({id,type,payload},transfer||[]);
     });
-    asr.model=model;
-    return asr.pipe;
+  },
+  failAll(err){
+    for(const [,j] of asr.jobs)j.reject(err);
+    asr.jobs.clear();
+  },
+  dispose(){
+    if(asr.worker){asr.worker.terminate();asr.worker=null;}
+    if(asr.workerUrl){URL.revokeObjectURL(asr.workerUrl);asr.workerUrl='';}
+  },
+  /* 停止辨識：Worker 模式可以當場砍掉，主執行緒模式只能等這段跑完 */
+  cancel(){
+    if(!asr.busy)return;
+    asr.aborted=true;
+    if(asr.useWorker){asr.dispose();asr.failAll(new Error('已取消'));}
+    asr.say('停止中…');
+  },
+  showDevice(d){
+    $('asrDevice').textContent=(d==='webgpu'?'WebGPU 加速':'CPU 運算')+(asr.useWorker?'．背景執行':'．主執行緒');
   },
 
+  /* ---------- 主執行緒退路（Worker 不能用時） ---------- */
+  async loadMain(model,onProgress){
+    if(asr.pipe&&asr.model===model)return;
+    let lib=null,last=null;
+    for(const url of TRANSFORMERS_CDN){
+      try{lib=await import(url);break;}catch(e){last=e;}
+    }
+    if(!lib)throw new Error('載入不到辨識程式庫，檢查一下網路：'+(last&&last.message||''));
+    lib.env.allowLocalModels=false;
+    let device='wasm';
+    try{if(navigator.gpu&&await navigator.gpu.requestAdapter())device='webgpu';}catch(e){}
+    asr.showDevice(device);
+    asr.pipe=await lib.pipeline('automatic-speech-recognition',model,{dtype:'q8',device,progress_callback:onProgress});
+    asr.model=model;
+  },
+
+  /* ---------- 載入模型：先試 Worker，失敗才退回主執行緒 ---------- */
+  async ensure(model,onProgress){
+    if(asr.useWorker){
+      try{
+        if(!asr.worker)asr.worker=asr.makeWorker();
+        await asr.call('load',{model},null,onProgress);
+        return;
+      }catch(e){
+        if(asr.aborted)throw e;
+        asr.useWorker=false;
+        asr.dispose();asr.jobs.clear();
+        asr.say('背景執行緒不能用（'+e.message+'），改在主執行緒跑，辨識時畫面會頓');
+      }
+    }
+    await asr.loadMain(model,onProgress);
+  },
+
+  /* ---------- 辨識一段聲音 ---------- */
+  async transcribe(pcm,lang){
+    if(asr.useWorker&&asr.worker)
+      return await asr.call('run',{pcm,lang:lang||''},[pcm.buffer]);
+    const o={chunk_length_s:30,stride_length_s:5,return_timestamps:true,task:'transcribe'};
+    if(lang)o.language=lang;
+    const r=await asr.pipe(pcm,o);
+    return {text:r.text,chunks:r.chunks||null};
+  },
+
+  /* ---------- 從影片檔取出 16kHz 單聲道 PCM ---------- */
   async pcm(file,from,to){
     const buf=await file.arrayBuffer();
     const AC=window.AudioContext||window.webkitAudioContext;
@@ -710,50 +847,62 @@ const asr={
     if(typeof p==='number')$('asrBar').style.width=clamp(p*100,0,100)+'%';
   },
 
+  click(){asr.busy?asr.cancel():asr.run();},
+
   async run(){
     if(asr.busy)return;
     if(!state.clips.length){ui.toast('先加入影片');return;}
     const model=$('asrModel').value,lang=$('asrLang').value;
-    asr.busy=true;$('asrBtn').disabled=true;
+    const btn=$('asrBtn');
+    asr.busy=true;asr.aborted=false;
+    btn.textContent='停止辨識';btn.classList.add('danger');
     let wake=null;
+    const fresh=[];
     try{
       try{if('wakeLock'in navigator)wake=await navigator.wakeLock.request('screen');}catch(e){}
       asr.say('載入模型…',0);
-      const pipe=await asr.load(model);
-      const fresh=[];
+      await asr.ensure(model,p=>{
+        if(p.status==='progress'&&p.total)
+          asr.say('下載模型 '+String(p.file||'').split('/').pop()+' '+Math.round(p.progress)+'%',p.progress/100);
+        else if(p.status==='ready')asr.say('模型就緒');
+      });
+
       for(let i=0;i<state.clips.length;i++){
-        const c=state.clips[i];
-        asr.say(`第 ${i+1}/${state.clips.length} 段：取出聲音…`,i/state.clips.length);
+        if(asr.aborted)break;
+        const c=state.clips[i],n=state.clips.length;
+        asr.say(`第 ${i+1}/${n} 段：取出聲音…`,i/n);
         let pcmData;
         try{pcmData=await asr.pcm(c.file,c.trimStart,c.trimEnd);}
         catch(e){asr.say(`第 ${i+1} 段的聲音讀不出來，跳過`);continue;}
-        asr.say(`第 ${i+1}/${state.clips.length} 段：辨識中，請不要切走…`,i/state.clips.length);
-        const opt={chunk_length_s:30,stride_length_s:5,return_timestamps:true,task:'transcribe'};
-        if(lang)opt.language=lang;
-        const res=await pipe(pcmData,opt);
+        if(asr.aborted)break;
+        asr.say(`第 ${i+1}/${n} 段：辨識中${asr.useWorker?'，這時候可以先去排片段或改字幕':'，畫面會頓一下'}`,i/n);
+        const res=await asr.transcribe(pcmData,lang);
+        pcmData=null;
         const off=clipOffset(i);
-        const parts=res.chunks&&res.chunks.length?res.chunks:[{timestamp:[0,clipLen(c)],text:res.text}];
-        for(const p of parts){
-          const txt=(p.text||'').trim();if(!txt)continue;
-          const st=(p.timestamp&&p.timestamp[0])||0;
-          const en=(p.timestamp&&p.timestamp[1])||st+2;
+        const parts=(res.chunks&&res.chunks.length)?res.chunks:[{timestamp:[0,clipLen(c)],text:res.text}];
+        for(const q of parts){
+          const txt=(q.text||'').trim();if(!txt)continue;
+          const st=(q.timestamp&&q.timestamp[0])||0;
+          const en=(q.timestamp&&q.timestamp[1])||st+2;
           fresh.push({id:++uid,start:off+st,end:off+Math.max(en,st+.6),text:txt,sel:false});
         }
-        pcmData=null;
       }
-      if(!fresh.length){asr.say('沒有辨識到內容，可能是聲音太小或沒有人聲。');}
-      else{
+
+      if(!fresh.length){
+        asr.say(asr.aborted?'已停止，沒有取得任何字幕。':'沒有辨識到內容，可能是聲音太小或沒有人聲。');
+      }else{
         if(state.subs.length&&confirm('已有 '+state.subs.length+' 句字幕，要換成這次辨識的結果嗎？（取消＝合併）'))
           state.subs=fresh;
         else state.subs=state.subs.concat(fresh);
         subs.sort();ui.renderSubs();ui.renderStrip();
-        asr.say('辨識完成，共 '+fresh.length+' 句。',1);
+        asr.say((asr.aborted?'已停止，先收下 ':'辨識完成，共 ')+fresh.length+' 句。',1);
       }
     }catch(e){
-      asr.say('辨識失敗：'+e.message);
+      asr.say(asr.aborted?'已停止辨識。':'辨識失敗：'+e.message);
     }finally{
       if(wake){try{wake.release();}catch(e){}}
-      asr.busy=false;$('asrBtn').disabled=false;
+      asr.busy=false;asr.aborted=false;
+      btn.textContent='開始辨識全部片段';btn.classList.remove('danger');
     }
   }
 };

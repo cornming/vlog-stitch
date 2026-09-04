@@ -43,7 +43,7 @@ python3 -m http.server 8080
 - 輸出 720p / 1080p，直式或橫式
 
 **字幕**
-- 自動聽打：Whisper 模型直接在瀏覽器跑，支援中／英／日
+- 自動聽打：Whisper 模型直接在瀏覽器跑，支援中／英／日，跑在背景執行緒不卡畫面，可隨時停止
 - 字幕列表可以逐句改字、改時間，全選、勾選刪除、清空
 - 五種樣式：經典、綜藝、底條、細字、大字卡；位置上中下、大小 60%–180%
 - 可以匯入／匯出 SRT，跟其他工具接得起來
@@ -62,7 +62,7 @@ python3 -m http.server 8080
 
 **webm 沒有總長度資訊。** MediaRecorder 產出的 webm 在部分播放器會顯示不出時間長度，這是已知行為，YouTube 上傳不受影響。
 
-**自動聽打很吃資源。** 第一次要下載模型（tiny 約 40MB、base 約 80MB、small 約 250MB），跑在主執行緒上，辨識期間畫面會頓。素材很長的話建議先用 tiny 試。
+**自動聽打很吃資源。** 第一次要下載模型（tiny 約 40MB、base 約 80MB、small 約 250MB）。辨識跑在 Web Worker 裡，過程中畫面照樣能操作，也可以隨時按停止。素材很長的話建議先用 tiny 試。
 
 ---
 
@@ -98,13 +98,21 @@ state              單一狀態物件：clips[]、subs[]、樣式與輸出設定
 
 **自動聽打**
 
-`asr.pcm()` 用 `decodeAudioData` 解出聲音，再用 `OfflineAudioContext` 重採樣成 16kHz 單聲道（Whisper 要求的格式），只取裁切範圍那一段。模型從 CDN 動態 `import()` 進來，有 WebGPU 就用 WebGPU，沒有就退回 WASM。
+推論跑在 Web Worker 裡，主執行緒不會被佔住。Worker 的原始碼放在 `<script id="asrWorkerSrc" type="text/worker">` 區塊，瀏覽器不會執行它；主程式讀 `textContent` 包成 Blob URL，再用 `new Worker(url, {type:'module'})` 啟動，所以整包還是維持單一檔案。
+
+分工是這樣：
+
+- **主執行緒**負責取聲音。`asr.pcm()` 用 `decodeAudioData` 解碼，再用 `OfflineAudioContext` 重採樣成 16kHz 單聲道（Whisper 要求的格式），只取裁切範圍那一段。`AudioContext` 在 Worker 裡拿不到，所以這步必須留在主執行緒。
+- **Worker** 負責推論。模型從 CDN 動態 `import()` 進來，有 WebGPU 就用 WebGPU，沒有就退回 WASM，載入一次之後所有片段共用。
+
+兩邊用 `{id, type, payload}` 訊息溝通，`asr.jobs` 這個 Map 依 id 對應回各自的 Promise。PCM 用 transferable 傳過去（`postMessage(msg, [pcm.buffer])`），不會複製一份。
+
+按停止就直接 `terminate()` 掉 Worker，當場中斷，這是搬進 Worker 之後才做得到的事。如果瀏覽器不支援 module worker（例如沒開設定的 Firefox），會自動退回主執行緒模式，只是畫面會頓、停止要等當前片段跑完。
 
 ---
 
 ## 之後可以做的
 
-- [ ] 把 Whisper 搬到 Web Worker，辨識時畫面就不會頓
 - [ ] 匯出改用 WebCodecs + mp4 muxer，可以比即時快很多，畫質也不會二次損失
 - [ ] 修補 webm 的 duration metadata
 - [ ] 轉場、背景音樂、靜音段自動偵測
