@@ -75,12 +75,15 @@ object Transcriber {
                 FeatureStatus.AVAILABLE -> log("模型已就緒")
                 FeatureStatus.DOWNLOADABLE -> {
                     log("需要下載模型…")
-                    recognizer.download.collect { d ->
+                    var totalBytes = 0L
+                    recognizer.download().collect { d ->
                         when (d) {
+                            is DownloadStatus.DownloadStarted -> {
+                                totalBytes = d.bytesToDownload
+                                log("開始下載模型，共 ${totalBytes / 1048576} MB")
+                            }
                             is DownloadStatus.DownloadCompleted -> log("模型下載完成")
                             is DownloadStatus.DownloadFailed -> throw Failed("模型下載失敗")
-                            is DownloadStatus.DownloadProgress ->
-                                log("下載中 ${d.totalBytesDownloaded / 1048576} MB")
                             else -> {}
                         }
                     }
