@@ -1,0 +1,67 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 讀取版本
+        id: ver
+        run: |
+          CODE=$(grep '^versionCode=' android/version.properties | cut -d= -f2)
+          NAME=$(grep '^versionName=' android/version.properties | cut -d= -f2)
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "版本 $NAME (build $CODE)"
+
+      - name: 取出這一版的更新說明
+        id: notes
+        run: |
+          NAME="${{ steps.ver.outputs.name }}"
+          # 從 CHANGELOG.md 抓出 "## v<版本>" 到下一個 "## " 之間的內容
+          awk -v v="## v$NAME" '
+            $0==v {flag=1; next}
+            /^## / {flag=0}
+            flag {print}
+          ' android/CHANGELOG.md > /tmp/notes.md
+          if [ ! -s /tmp/notes.md ]; then echo "（這一版沒有填寫說明）" > /tmp/notes.md; fi
+          cat /tmp/notes.md
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: 建置 APK
+        working-directory: android
+        run: gradle --no-daemon assembleRelease
+
+      - name: 重新命名
+        run: |
+          SRC=$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          cp "$SRC" "vlog-stitch-v${{ steps.ver.outputs.name }}.apk"
+          ls -la *.apk
+
+      - name: 發佈
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-v${{ steps.ver.outputs.code }}
+          name: v${{ steps.ver.outputs.name }}
+          body_path: /tmp/notes.md
+          files: vlog-stitch-v${{ steps.ver.outputs.name }}.apk

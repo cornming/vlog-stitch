@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">接片室</string>
+    <string name="pick">選影片</string>
+    <string name="export">匯出</string>
+    <string name="stop">停止</string>
+    <string name="empty_hint">按「選影片」挑幾段，由上到下就是接起來的順序。成品會存進相簿的 Movies / vlog-stitch。</string>
+    <string name="clip_count">已選 %d 段</string>
+    <string name="exporting">匯出中　%d%%</string>
+    <string name="done_fmt">完成，花了 %.1f 秒</string>
+    <string name="failed_fmt">失敗：%s</string>
+    <string name="cancelled">已取消</string>
+    <string name="version_fmt">版本 %1$s（build %2$d）</string>
+    <string name="check_update">檢查更新</string>
+    <string name="update_history">更新紀錄</string>
+    <string name="no_update">已是最新版</string>
+    <string name="already_latest">目前版本 %s，沒有更新。</string>
+    <string name="update_available">有新版本：%s</string>
+    <string name="update_body">發佈時間 %1$s\n\n這次更新內容：\n%2$s</string>
+    <string name="no_notes">（這一版沒有填寫說明）</string>
+    <string name="download">下載更新</string>
+    <string name="later">稍後再說</string>
+    <string name="no_releases">還沒有任何發佈紀錄，或是連不上網路。</string>
+</resources>
