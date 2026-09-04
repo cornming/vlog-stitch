@@ -8,6 +8,7 @@ object Store {
     private const val FILE = "vlog-stitch"
     private const val KEY_CLIPS = "clips"
     private const val KEY_MODE = "mode"
+    private const val KEY_SUBS = "subs"
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -32,5 +33,12 @@ object Store {
 
     fun setMode(ctx: Context, m: Exporter.Mode) {
         prefs(ctx).edit().putString(KEY_MODE, m.name).apply()
+    }
+
+    fun subs(ctx: Context): MutableList<Subtitle> =
+        Srt.fromJson(prefs(ctx).getString(KEY_SUBS, null))
+
+    fun setSubs(ctx: Context, list: List<Subtitle>) {
+        prefs(ctx).edit().putString(KEY_SUBS, Srt.toJson(list)).apply()
     }
 }

@@ -47,6 +47,10 @@ class MainActivity : AppCompatActivity() {
     private val thumbs = object : LruCache<String, Bitmap>(24) {}
     private lateinit var touchHelper: ItemTouchHelper
 
+    private val subEditor = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { refresh() }
+
     private val pick = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
@@ -82,6 +86,8 @@ class MainActivity : AppCompatActivity() {
         b.btnSaveLog.setOnClickListener { saveLog() }
         b.btnPlay.setOnClickListener { lastOutput?.let { openVideo(it) } }
         b.btnShare.setOnClickListener { lastOutput?.let { shareVideo(it) } }
+        b.btnShareSrt.setOnClickListener { shareSrt() }
+        b.subCard.setOnClickListener { openSubtitles() }
 
         b.version.text = getString(R.string.version_fmt, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
         mode = Store.mode(this)
@@ -108,7 +114,42 @@ class MainActivity : AppCompatActivity() {
 
     // ---------------- 畫面 ----------------
 
+    private fun openSubtitles() {
+        val i = Intent(this, SubtitleActivity::class.java)
+        i.putExtra(SubtitleActivity.EXTRA_TOTAL, clips.sumOf { it.durationMs })
+        subEditor.launch(i)
+    }
+
+    /** 字幕不必燒進畫面，另存一份 SRT 上傳 YouTube 就好，成品也不用重新編碼 */
+    private fun shareSrt() {
+        val subs = Store.subs(this)
+        if (subs.isEmpty()) { toast(getString(R.string.srt_none)); return }
+        try {
+            val dir = getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)!!
+            dir.mkdirs()
+            val f = File(dir, "subtitles.srt")
+            f.writeText(Srt.format(subs))
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", f)
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "application/x-subrip"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }, getString(R.string.share_srt)))
+        } catch (e: Exception) {
+            toast(getString(R.string.srt_save_failed, e.message ?: ""))
+        }
+    }
+
+    private fun refreshSubCard() {
+        val n = Store.subs(this).size
+        b.subCardBody.text = if (n == 0) getString(R.string.sub_card_none)
+        else getString(R.string.sub_card_some, n)
+        b.btnShareSrt.visibility = if (n > 0 && lastOutput != null) View.VISIBLE else View.GONE
+    }
+
     private fun refresh() {
+        refreshSubCard()
         b.empty.visibility = if (clips.isEmpty()) View.VISIBLE else View.GONE
         b.btnExport.isEnabled = clips.isNotEmpty() || busy
         b.count.text = getString(R.string.clip_count, clips.size)

@@ -23,6 +23,12 @@
         </activity>
 
         <activity
+            android:name=".SubtitleActivity"
+            android:exported="false"
+            android:label="@string/subtitles"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".UpdateHistoryActivity"
             android:exported="false"
             android:label="@string/update_history" />
