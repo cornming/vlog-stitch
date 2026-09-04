@@ -231,6 +231,8 @@ details.note ul{padding-left:18px;margin:8px 0 0}
       <p class="muted" id="modeHint" style="margin:9px 0 2px"></p>
       <label class="field">解析度</label>
       <div class="pill" id="resPills"></div>
+      <label class="field">輸出幀率</label>
+      <div class="pill" id="fpsPills"></div>
       <label class="field">畫面方向</label>
       <div class="pill" id="oriPills"></div>
       <label class="field">比例不合時</label>
@@ -367,6 +369,7 @@ const state={
   subPos:'bottom',
   sizeMul:1,
   mode:'fast',
+  fps:30,
   res:720,
   ori:'auto',
   fit:'contain',
@@ -962,10 +965,18 @@ function shortCodec(full){
   if(s.startsWith('flac'))return 'flac';
   return s.split('.')[0]||'';
 }
+/* 取出真正的位元組。TypedArray 直接讀 .buffer 會拿到整個底層緩衝區，
+   長度完全不對，比對就會誤判。 */
+function toBytes(x){
+  if(x==null)return null;
+  if(x instanceof ArrayBuffer)return new Uint8Array(x);
+  if(ArrayBuffer.isView(x))return new Uint8Array(x.buffer,x.byteOffset,x.byteLength);
+  try{return new Uint8Array(x);}catch(e){return null;}
+}
 function sameBytes(a,b){
-  if(!a&&!b)return true;
-  if(!a||!b)return false;
-  const x=new Uint8Array(a.buffer||a),y=new Uint8Array(b.buffer||b);
+  const x=toBytes(a),y=toBytes(b);
+  if(!x&&!y)return true;
+  if(!x||!y)return false;
   if(x.length!==y.length)return false;
   for(let i=0;i<x.length;i++)if(x[i]!==y[i])return false;
   return true;
@@ -1020,6 +1031,23 @@ const dbg={
   }
 };
 
+/* 用 Web Audio 解出某段的聲音，當 WebCodecs 的聲音解碼器建不起來時的退路 */
+async function decodeClipAudio(file,from,to){
+  const raw=await file.arrayBuffer();
+  const AC=window.AudioContext||window.webkitAudioContext;
+  const tmp=new AC();
+  let audio;
+  try{audio=await tmp.decodeAudioData(raw);}
+  finally{try{tmp.close();}catch(e){}}
+  const s=Math.max(0,from||0),e=Math.min(audio.duration,to||audio.duration);
+  const sr=audio.sampleRate,ch=Math.min(2,audio.numberOfChannels||1);
+  const len=Math.max(1,Math.ceil((e-s)*sr));
+  const off=new OfflineAudioContext(ch,len,sr);
+  const src=off.createBufferSource();
+  src.buffer=audio;src.connect(off.destination);src.start(0,s,e-s);
+  return await off.startRendering();
+}
+
 const xport={
   busy:false,cancel:false,wake:null,ranMode:'',
 
@@ -1057,7 +1085,8 @@ const xport={
       dbg.add(`[${i+1}] ${c.name}`);
       dbg.add(`    檔案 ${(c.file.size/1048576).toFixed(1)}MB  型態 ${c.file.type||'未知'}`);
       dbg.add(`    影像 ${it.vcfg.codec}  ${it.vcfg.codedWidth}x${it.vcfg.codedHeight}  旋轉${rot}°  ${fps}fps  可解碼=${vOk}`);
-      dbg.add(`    描述位元組 ${it.vcfg.description?('長度'+new Uint8Array(it.vcfg.description.buffer||it.vcfg.description).length):'無'}`);
+      const vd=toBytes(it.vcfg.description);
+      dbg.add(`    描述位元組 ${vd?(vd.length+' bytes  開頭 '+[...vd.slice(0,8)].map(b=>b.toString(16).padStart(2,'0')).join(' ')):'無'}`);
       if(it.acfg)dbg.add(`    聲音 ${it.acfg.codec}  ${it.acfg.sampleRate}Hz  ${it.acfg.numberOfChannels}ch  可解碼=${aOk}`);
       else dbg.add(`    聲音 無`);
       dbg.add(`    裁切 ${c.trimStart.toFixed(2)}s → ${c.trimEnd.toFixed(2)}s（共 ${clipLen(c).toFixed(2)}s）`);
@@ -1175,6 +1204,39 @@ const xport={
   },
 
   /* ---------- 模式二：重新編碼，字幕燒進畫面 ---------- */
+  /* 聲音先跑：它便宜、又是最容易失敗的一步，失敗要在花七秒編影像之前就知道 */
+  async addClipAudio(lib,it,i,asrc){
+    const c=it.clip,len=clipLen(c);
+    if(!asrc)return;
+    if(it.at){
+      try{
+        let an=0;
+        const asink=new lib.AudioSampleSink(it.at);
+        for await (const sa of asink.samples(c.trimStart,c.trimEnd)){
+          if(xport.cancel){sa.close();throw new Error('已取消');}
+          await asrc.add(sa.toAudioBuffer());
+          sa.close();an++;
+        }
+        dbg.add(`[${i+1}] 聲音完成 ${an} 塊`);
+        return;
+      }catch(e){
+        if(xport.cancel)throw e;
+        dbg.add(`[${i+1}] WebCodecs 解不了聲音（${e.name||''} ${e.message}），改用 Web Audio`);
+      }
+      try{
+        const buf=await decodeClipAudio(c.file,c.trimStart,c.trimEnd);
+        await asrc.add(buf);
+        dbg.add(`[${i+1}] Web Audio 退路成功，${buf.duration.toFixed(2)}s / ${buf.sampleRate}Hz / ${buf.numberOfChannels}ch`);
+        return;
+      }catch(e2){
+        dbg.add(`[${i+1}] Web Audio 也失敗（${e2.message}），這段補靜音`);
+      }
+    }
+    const sr=48000;
+    await asrc.add(new AudioBuffer({length:Math.max(1,Math.round(len*sr)),sampleRate:sr,numberOfChannels:1}));
+    dbg.add(`[${i+1}] 補 ${len.toFixed(2)}s 靜音`);
+  },
+
   async encode(lib,list,dest){
     const {w:W,h:H}=engine.outSize();
     const canvas=$('stage');
@@ -1187,7 +1249,8 @@ const xport={
     const vcodec=await lib.getFirstEncodableVideoCodec(format.getSupportedVideoCodecs(),{width:W,height:H});
     if(!vcodec)throw new Error('這台裝置沒有可用的影像編碼器');
     const bitrate=state.res>=1080?10e6:6e6;
-    dbg.add(`重新編碼 ${W}x${H}，編碼器 ${vcodec}，位元率 ${(bitrate/1e6).toFixed(0)}Mbps`);
+    const cap=state.fps||0;
+    dbg.add(`重新編碼 ${W}x${H}，編碼器 ${vcodec}，位元率 ${(bitrate/1e6).toFixed(0)}Mbps，輸出幀率 ${cap?cap+'fps':'照原始'}`);
     const vsrc=new lib.CanvasSource(canvas,{
       codec:vcodec,quality:new lib.Quality({bitrate}),keyFrameInterval:2
     });
@@ -1211,20 +1274,28 @@ const xport={
     for(let i=0;i<list.length;i++){
       if(xport.cancel)throw new Error('已取消');
       const it=list[i],c=it.clip,len=clipLen(c);
-      dbg.add(`[${i+1}] 開始解碼 ${c.trimStart.toFixed(2)}s→${c.trimEnd.toFixed(2)}s，輸出位移 ${base.toFixed(2)}s`);
 
-      let n=0,lastT=0;
+      await xport.addClipAudio(lib,it,i,asrc);
+
+      dbg.add(`[${i+1}] 開始解碼影像 ${c.trimStart.toFixed(2)}s→${c.trimEnd.toFixed(2)}s，輸出位移 ${base.toFixed(2)}s`);
+      const tStart=performance.now();
+      let n=0,skipped=0,lastT=0,lastSlot=-1;
       const vsink=new lib.VideoSampleSink(it.vt);
       try{
         for await (const sample of vsink.samples(c.trimStart,c.trimEnd)){
           if(xport.cancel){sample.close();throw new Error('已取消');}
           const t=base+Math.max(0,sample.timestamp-c.trimStart);
+          if(cap){
+            const slot=Math.floor((t+1e-6)*cap);
+            if(slot===lastSlot){sample.close();skipped++;continue;}
+            lastSlot=slot;
+          }
           ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
           try{sample.drawWithFit(ctx,{fit:state.fit==='cover'?'cover':'contain'});}
           catch(e){dbg.add(`[${i+1}] 第 ${n} 格畫不出來：${e.message}`);}
           const act=subs.activeAt(t);
           if(act.length)drawSubtitle(ctx,act.map(x=>x.text).join(' '),W,H);
-          await vsrc.add(t,sample.duration||1/FPS);
+          await vsrc.add(t,cap?1/cap:(sample.duration||1/FPS));
           sample.close();
           n++;lastT=t;
           if((n&15)===0){xport.progress(t/total,'重新編碼中');await new Promise(r=>setTimeout(r,0));}
@@ -1233,29 +1304,8 @@ const xport={
         dbg.add(`[${i+1}] 影像在第 ${n} 格（約 ${lastT.toFixed(2)}s）中斷：${e.name||''} ${e.message}`);
         throw e;
       }
-      dbg.add(`[${i+1}] 影像完成 ${n} 格`);
-
-      if(asrc){
-        if(it.at){
-          let an=0;
-          const asink=new lib.AudioSampleSink(it.at);
-          try{
-            for await (const s of asink.samples(c.trimStart,c.trimEnd)){
-              if(xport.cancel){s.close();throw new Error('已取消');}
-              await asrc.add(s.toAudioBuffer());
-              s.close();an++;
-            }
-          }catch(e){
-            dbg.add(`[${i+1}] 聲音在第 ${an} 塊中斷：${e.name||''} ${e.message}`);
-            throw e;
-          }
-          dbg.add(`[${i+1}] 聲音完成 ${an} 塊`);
-        }else{
-          const sr=48000;
-          await asrc.add(new AudioBuffer({length:Math.max(1,Math.round(len*sr)),sampleRate:sr,numberOfChannels:1}));
-          dbg.add(`[${i+1}] 沒有聲音軌，補 ${len.toFixed(2)}s 靜音`);
-        }
-      }
+      const took=(performance.now()-tStart)/1000;
+      dbg.add(`[${i+1}] 影像完成 ${n} 格${skipped?('，跳過 '+skipped+' 格'):''}，耗時 ${took.toFixed(1)}s（${(len/took).toFixed(2)} 倍速）`);
       base+=len;
     }
 
@@ -1573,7 +1623,7 @@ const ui={
 
   saveStyle(){
     try{localStorage.setItem('vlog-stitch-style',JSON.stringify({
-      k:state.styleKey,p:state.subPos,m:state.sizeMul,r:state.res,o:state.ori,f:state.fit,x:state.mode
+      k:state.styleKey,p:state.subPos,m:state.sizeMul,r:state.res,o:state.ori,f:state.fit,x:state.mode,q:state.fps
     }));}catch(e){}
   },
   loadStyle(){
@@ -1586,6 +1636,7 @@ const ui={
       if(s.o)state.ori=s.o;
       if(s.f)state.fit=s.f;
       if(s.x)state.mode=s.x;
+      if(s.q!==undefined)state.fps=s.q;
     }catch(e){}
   }
 };
@@ -1603,6 +1654,8 @@ ui.pills('posPills',[['top','上'],['middle','中'],['bottom','下']],
   ()=>state.subPos,v=>{state.subPos=v;ui.drawStylePreview();ui.saveStyle();});
 ui.pills('modePills',[['fast','快速接片'],['encode','重新編碼＋燒字幕'],['record','即時錄製']],
   ()=>state.mode,v=>{state.mode=v;ui.syncModePills();ui.saveStyle();});
+ui.pills('fpsPills',[[30,'30fps'],[60,'60fps'],[0,'照原始']],
+  ()=>state.fps,v=>{state.fps=v;ui.saveStyle();});
 ui.pills('resPills',[[720,'720p'],[1080,'1080p']],
   ()=>state.res,v=>{state.res=v;ui.fitStage();ui.saveStyle();});
 ui.pills('oriPills',[['auto','跟著第一段'],['landscape','橫式'],['portrait','直式']],

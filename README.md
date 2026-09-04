@@ -40,7 +40,7 @@ python3 -m http.server 8080
 - 一次選多段影片，上下箭頭排順序
 - 每段可以獨立裁掉頭尾（拖滑桿，或播到某個點按「目前位置設為起點」）
 - 比例不一樣的素材可以選「留黑邊」或「裁切填滿」
-- 輸出 720p / 1080p，直式或橫式
+- 輸出 720p / 1080p，直式或橫式，幀率可壓到 30fps（60fps 素材的編碼量直接減半）
 
 **字幕**
 - 自動聽打：Whisper 模型直接在瀏覽器跑，支援中／英／日，跑在背景執行緒不卡畫面，可隨時停止
@@ -68,6 +68,8 @@ python3 -m http.server 8080
 **快速接片有前提。** 所有片段的影像編碼、解析度、編碼參數必須一致，聲音的編碼、取樣率、聲道數也要一致。同一支手機用同一個 App 拍的通常沒問題，混到不同來源就不行。不符合時會自動改用重新編碼，並在畫面上說明原因。
 
 **快速接片的裁切點會對齊關鍵影格。** 因為完全沒有重新編碼，只能從關鍵影格開始切，實際起點可能比你設定的早一兩秒。匯出後會告訴你有幾段被移動過。需要精準裁切就用重新編碼模式。
+
+**聲音解碼有可能失敗。** 實測在 Android 上遇過 `canDecode()` 回報 true、但 WebCodecs 的 `AudioDecoder` 建立時仍丟 `EncodingError: Decoding error.`。重新編碼模式因此採三層退路：WebCodecs → Web Audio 的 `decodeAudioData` → 等長靜音。任何一層成功就繼續，不會讓整趟匯出白跑，實際走到哪一層記錄裡都寫得清楚。
 
 **手機不一定解得開 HEVC。** 不少 Android 手機預設用 H.265 錄影，但 Chrome 的 WebCodecs 對 HEVC 支援看裝置。重新編碼模式開始前會先用 `canDecode()` 檢查，解不開會直接擋下並指出是哪一段，不會跑到一半才失敗。快速接片不需要解碼，所以不受影響。
 
@@ -98,11 +100,15 @@ state              單一狀態物件：clips[]、subs[]、樣式與輸出設定
 
 *快速接片（`xport.remux`）*　完全不碰畫素。用 `EncodedPacketSink` 把每段的封包讀出來，`packet.clone({timestamp})` 位移時間戳，再用 `EncodedVideoPacketSource` / `EncodedAudioPacketSource` 寫進同一個 mp4。第一個封包要附上 `decoderConfig`，後面就不用。裁切用 `getKeyPacket(trimStart)` 找關鍵影格起點，所以會有對齊誤差。開跑前先用 `checkCompat()` 比對所有片段的編碼參數，包含 `description` 的位元組，不一致就擋下來改走重新編碼。
 
-*重新編碼（`xport.encode`）*　用 `VideoSampleSink.samples(start, end)` 逐格取出解碼後的畫面，`drawWithFit()` 依「留黑邊／裁切填滿」畫進 canvas，疊上該時間點的字幕，再交給 `CanvasSource.add(timestamp, duration)` 硬體編碼。聲音走 `AudioSampleSink` → `toAudioBuffer()` → `AudioBufferSource.add()`；`AudioBufferSource` 會把每個 buffer 依序接在前一個後面，所以不用自己算時間戳。**沒有聲音軌的片段會補一段等長靜音**，否則後面所有片段的聲音都會提前，畫面對不上嘴。
+*重新編碼（`xport.encode`）*　**每段先處理聲音再處理影像**。聲音便宜又最容易失敗，先跑才能在花好幾秒編完影像之前就知道出事。影像用 `VideoSampleSink.samples(start, end)` 逐格取出解碼後的畫面，`drawWithFit()` 依「留黑邊／裁切填滿」畫進 canvas，疊上該時間點的字幕，再交給 `CanvasSource.add(timestamp, duration)` 硬體編碼。聲音走 `AudioSampleSink` → `toAudioBuffer()` → `AudioBufferSource.add()`；`AudioBufferSource` 會把每個 buffer 依序接在前一個後面，所以不用自己算時間戳。**沒有聲音軌的片段會補一段等長靜音**，否則後面所有片段的聲音都會提前，畫面對不上嘴。
 
 **匯出前的預檢**
 
 `xport.preflight()` 在動工前先把每段的規格全部寫進診斷記錄：編碼字串、coded 尺寸、旋轉、fps、`description` 長度、聲音參數，以及最重要的 `canDecode()`。重新編碼模式下只要有一段解不開就直接擋下，訊息會指名是第幾段、什麼編碼，不會跑到一半才丟一句 `Decoding error`。
+
+**位元組比對的坑**
+
+`decoderConfig.description` 是 TypedArray 視圖，直接讀 `.buffer` 會拿到整個底層緩衝區（實測是幾萬位元組，而 hvcC 其實只有幾百）。這會讓相容性判斷永遠誤判成「參數不同」，把本來可以秒出的素材推去重新編碼。`toBytes()` 用 `byteOffset` / `byteLength` 取出真正的內容，記錄裡也會印出長度和開頭幾個位元組方便核對。
 
 **輸出目的地**
 
