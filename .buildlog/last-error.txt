@@ -1,139 +1,69 @@
-e: org.jetbrains.kotlin.util.FileAnalysisException: While analysing /home/runner/work/vlog-stitch/vlog-stitch/android/app/src/main/java/tw/cornming/vlogstitch/AudioPcm.kt:22:5: java.lang.IllegalArgumentException: source must not be null
-Caused by: java.lang.IllegalArgumentException: source must not be null
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.mlkit.granules.genai.speech_mlkit_genai_speech.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition.grpc_client_info_kt_proto_lite.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition.grpc_feature_config_kt_proto_lite.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition.grpc_google_asr_service_kt_grpc.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition.grpc_google_asr_service_kt_proto_lite.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition.grpc_google_asr_service_parcelables.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition.grpc_model_management_kt_proto_lite.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition_recognizer_mode_kt_proto_lite.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.frameworks.client.data.android.server.contrib.parcelables_parcelable_lists.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.frameworks.client.data.android.server.contrib.parcelables_parcelables.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.frameworks.client.data.android.server.contrib.parcelables_server_interceptor.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/parcelize-runtime.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/third_party.kotlin.grpc_kotlin.stub.src.main.java.io.grpc.kotlin_call_options_android.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/third_party.kotlin.grpc_kotlin.stub.src.main.java.io.grpc.kotlin_context_android.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/third_party.kotlin.grpc_kotlin.stub.src.main.java.io.grpc.kotlin_stub_android.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/third_party.kotlin.protobuf.src.commonMain.kotlin.com.google.protobuf.kotlin_only_for_use_in_proto_generated_code_its_generator_and_tests.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/third_party.kotlin.protobuf.src.commonMain.kotlin.com.google.protobuf.kotlin_shared_runtime.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/87b8e44623f6150632aa4300eb41ad05/transformed/genai-common-1.0.0-beta3-api.jar!/META-INF/java.com.google.android.libraries.mlkit.granules.genai.common_mlkit_genai_common.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.20/5380b19fa1924399b62ce3a1faffebb2b4f82272/kotlin-stdlib-2.2.20.jar!/META-INF/kotlin-stdlib-jdk7.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.20/5380b19fa1924399b62ce3a1faffebb2b4f82272/kotlin-stdlib-2.2.20.jar!/META-INF/kotlin-stdlib-jdk8.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.20/5380b19fa1924399b62ce3a1faffebb2b4f82272/kotlin-stdlib-2.2.20.jar!/META-INF/kotlin-stdlib.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
+e: file:///home/runner/work/vlog-stitch/vlog-stitch/android/app/src/main/java/tw/cornming/vlogstitch/Transcriber.kt:78:32 Function invocation 'download()' expected.
 FAILURE: Build failed with an exception.
 * What went wrong:
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.11.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :app
+w: file:///home/runner/work/vlog-stitch/vlog-stitch/android/app/build.gradle.kts:69:21: 'jvmTarget: String' is deprecated. Please migrate to the compilerOptions DSL. More details are here: https://kotl.in/u1r8ln
+
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preReleaseBuild UP-TO-DATE
+> Task :app:mergeReleaseJniLibFolders
+> Task :app:mergeReleaseNativeLibs NO-SOURCE
+> Task :app:stripReleaseDebugSymbols NO-SOURCE
+> Task :app:extractReleaseNativeSymbolTables NO-SOURCE
+> Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
+> Task :app:checkReleaseDuplicateClasses
+> Task :app:buildKotlinToolingMetadata
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:generateReleaseResValues
+> Task :app:dataBindingMergeDependencyArtifactsRelease
+> Task :app:generateReleaseResources
+> Task :app:packageReleaseResources
+> Task :app:mergeReleaseResources
+> Task :app:generateReleaseBuildConfig
+> Task :app:parseReleaseLocalResources
+> Task :app:checkReleaseAarMetadata
+> Task :app:dataBindingGenBaseClassesRelease
+> Task :app:mapReleaseSourceSetPaths
+> Task :app:createReleaseCompatibleScreenManifests
+> Task :app:extractDeepLinksRelease
+> Task :app:processReleaseMainManifest
+> Task :app:processReleaseManifest
+> Task :app:javaPreCompileRelease
+> Task :app:desugarReleaseFileDependencies
+> Task :app:mergeReleaseStartupProfile
+> Task :app:mergeReleaseArtProfile
+> Task :app:mergeReleaseShaders
+> Task :app:compileReleaseShaders NO-SOURCE
+> Task :app:generateReleaseAssets UP-TO-DATE
+> Task :app:mergeReleaseAssets
+> Task :app:compressReleaseAssets
+> Task :app:extractReleaseVersionControlInfo
+> Task :app:extractProguardFiles
+> Task :app:collectReleaseDependencies
+> Task :app:sdkReleaseDependencyData
+> Task :app:validateSigningRelease
 > Task :app:writeReleaseAppMetadata
 > Task :app:writeReleaseSigningConfigVersions
-> Task :app:optimizeReleaseResources
+> Task :app:processReleaseManifestForPackage
 > Task :app:mergeExtDexRelease
+> Task :app:processReleaseResources
+> Task :app:optimizeReleaseResources
+
+> Task :app:compileReleaseKotlin
+e: file:///home/runner/work/vlog-stitch/vlog-stitch/android/app/src/main/java/tw/cornming/vlogstitch/Transcriber.kt:78:32 Function invocation 'download()' expected.
 
 > Task :app:compileReleaseKotlin FAILED
-e: org.jetbrains.kotlin.util.FileAnalysisException: While analysing /home/runner/work/vlog-stitch/vlog-stitch/android/app/src/main/java/tw/cornming/vlogstitch/AudioPcm.kt:22:5: java.lang.IllegalArgumentException: source must not be null
-	at org.jetbrains.kotlin.util.AnalysisExceptionsKt.wrapIntoFileAnalysisExceptionIfNeeded(AnalysisExceptions.kt:57)
-	at org.jetbrains.kotlin.fir.FirCliExceptionHandler.handleExceptionOnFileAnalysis(Utils.kt:249)
-	at org.jetbrains.kotlin.fir.pipeline.AnalyseKt.runCheckers(analyse.kt:46)
-	at org.jetbrains.kotlin.fir.pipeline.FirUtilsKt.resolveAndCheckFir(firUtils.kt:77)
-	at org.jetbrains.kotlin.fir.pipeline.FirUtilsKt.buildResolveAndCheckFirViaLightTree(firUtils.kt:88)
-	at org.jetbrains.kotlin.cli.jvm.compiler.pipeline.JvmCompilerPipelineKt.compileModuleToAnalyzedFir(jvmCompilerPipeline.kt:319)
-	at org.jetbrains.kotlin.cli.jvm.compiler.pipeline.JvmCompilerPipelineKt.compileModulesUsingFrontendIrAndLightTree(jvmCompilerPipeline.kt:118)
-	at org.jetbrains.kotlin.cli.jvm.K2JVMCompiler.doExecute(K2JVMCompiler.kt:148)
-	at org.jetbrains.kotlin.cli.jvm.K2JVMCompiler.doExecute(K2JVMCompiler.kt:43)
-	at org.jetbrains.kotlin.cli.common.CLICompiler.execImpl(CLICompiler.kt:103)
-	at org.jetbrains.kotlin.cli.common.CLICompiler.execImpl(CLICompiler.kt:49)
-	at org.jetbrains.kotlin.cli.common.CLITool.exec(CLITool.kt:101)
-	at org.jetbrains.kotlin.incremental.IncrementalJvmCompilerRunner.runCompiler(IncrementalJvmCompilerRunner.kt:464)
-	at org.jetbrains.kotlin.incremental.IncrementalJvmCompilerRunner.runCompiler(IncrementalJvmCompilerRunner.kt:73)
-	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.doCompile(IncrementalCompilerRunner.kt:506)
-	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.compileImpl(IncrementalCompilerRunner.kt:423)
-	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.compileNonIncrementally(IncrementalCompilerRunner.kt:301)
-	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.compile(IncrementalCompilerRunner.kt:129)
-	at org.jetbrains.kotlin.daemon.CompileServiceImplBase.execIncrementalCompiler(CompileServiceImpl.kt:675)
-	at org.jetbrains.kotlin.daemon.CompileServiceImplBase.access$execIncrementalCompiler(CompileServiceImpl.kt:92)
-	at org.jetbrains.kotlin.daemon.CompileServiceImpl.compile(CompileServiceImpl.kt:1660)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
-	at java.rmi/sun.rmi.server.UnicastServerRef.dispatch(UnicastServerRef.java:360)
-	at java.rmi/sun.rmi.transport.Transport$1.run(Transport.java:200)
-	at java.rmi/sun.rmi.transport.Transport$1.run(Transport.java:197)
-	at java.base/java.security.AccessController.doPrivileged(AccessController.java:712)
-	at java.rmi/sun.rmi.transport.Transport.serviceCall(Transport.java:196)
-	at java.rmi/sun.rmi.transport.tcp.TCPTransport.handleMessages(TCPTransport.java:587)
-	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run0(TCPTransport.java:828)
-	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.lambda$run$0(TCPTransport.java:705)
-	at java.base/java.security.AccessController.doPrivileged(AccessController.java:399)
-	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run(TCPTransport.java:704)
-	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
-	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
-	at java.base/java.lang.Thread.run(Thread.java:840)
-Caused by: java.lang.IllegalArgumentException: source must not be null
-	at org.jetbrains.kotlin.diagnostics.KtDiagnosticReportHelpersKt.requireNotNull(KtDiagnosticReportHelpers.kt:68)
-	at org.jetbrains.kotlin.diagnostics.KtDiagnosticReportHelpersKt.reportOn(KtDiagnosticReportHelpers.kt:39)
-	at org.jetbrains.kotlin.diagnostics.KtDiagnosticReportHelpersKt.reportOn$default(KtDiagnosticReportHelpers.kt:31)
-	at org.jetbrains.kotlin.fir.analysis.checkers.expression.FirIncompatibleClassExpressionChecker.checkSourceElement(FirIncompatibleClassExpressionChecker.kt:50)
-	at org.jetbrains.kotlin.fir.analysis.checkers.expression.FirIncompatibleClassExpressionChecker.checkType$checkers(FirIncompatibleClassExpressionChecker.kt:42)
-	at org.jetbrains.kotlin.fir.analysis.checkers.type.FirIncompatibleClassTypeChecker.check(FirIncompatibleClassTypeChecker.kt:17)
-	at org.jetbrains.kotlin.fir.analysis.collectors.components.TypeCheckersDiagnosticComponent.check(TypeCheckersDiagnosticComponent.kt:81)
-	at org.jetbrains.kotlin.fir.analysis.collectors.components.TypeCheckersDiagnosticComponent.visitResolvedTypeRef(TypeCheckersDiagnosticComponent.kt:53)
-	at org.jetbrains.kotlin.fir.analysis.collectors.components.TypeCheckersDiagnosticComponent.visitResolvedTypeRef(TypeCheckersDiagnosticComponent.kt:19)
-	at org.jetbrains.kotlin.fir.types.FirResolvedTypeRef.accept(FirResolvedTypeRef.kt:28)
-	at org.jetbrains.kotlin.fir.analysis.collectors.CheckerRunningDiagnosticCollectorVisitor.checkElement(CheckerRunningDiagnosticCollectorVisitor.kt:24)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitResolvedTypeRef(AbstractDiagnosticCollectorVisitor.kt:248)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitResolvedTypeRef(AbstractDiagnosticCollectorVisitor.kt:30)
-	at org.jetbrains.kotlin.fir.types.FirResolvedTypeRef.accept(FirResolvedTypeRef.kt:28)
-	at org.jetbrains.kotlin.fir.declarations.impl.FirSimpleFunctionImpl.acceptChildren(FirSimpleFunctionImpl.kt:63)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitNestedElements(AbstractDiagnosticCollectorVisitor.kt:38)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitWithDeclarationAndReceiver(AbstractDiagnosticCollectorVisitor.kt:311)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitSimpleFunction(AbstractDiagnosticCollectorVisitor.kt:118)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitSimpleFunction(AbstractDiagnosticCollectorVisitor.kt:30)
-	at org.jetbrains.kotlin.fir.declarations.FirSimpleFunction.accept(FirSimpleFunction.kt:51)
-	at org.jetbrains.kotlin.fir.declarations.impl.FirRegularClassImpl.acceptChildren(FirRegularClassImpl.kt:63)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitNestedElements(AbstractDiagnosticCollectorVisitor.kt:38)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitWithDeclarationAndReceiver(AbstractDiagnosticCollectorVisitor.kt:311)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitClassAndChildren(AbstractDiagnosticCollectorVisitor.kt:87)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitRegularClass(AbstractDiagnosticCollectorVisitor.kt:92)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitRegularClass(AbstractDiagnosticCollectorVisitor.kt:30)
-	at org.jetbrains.kotlin.fir.declarations.FirRegularClass.accept(FirRegularClass.kt:48)
-	at org.jetbrains.kotlin.fir.declarations.impl.FirFileImpl.acceptChildren(FirFileImpl.kt:57)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitNestedElements(AbstractDiagnosticCollectorVisitor.kt:38)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitFile(AbstractDiagnosticCollectorVisitor.kt:1151)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollectorVisitor.visitFile(AbstractDiagnosticCollectorVisitor.kt:30)
-	at org.jetbrains.kotlin.fir.declarations.FirFile.accept(FirFile.kt:42)
-	at org.jetbrains.kotlin.fir.analysis.collectors.AbstractDiagnosticCollector.collectDiagnostics(AbstractDiagnosticCollector.kt:36)
-	at org.jetbrains.kotlin.fir.pipeline.AnalyseKt.runCheckers(analyse.kt:34)
-	... 35 more
-
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.mlkit.granules.genai.speech_mlkit_genai_speech.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition.grpc_client_info_kt_proto_lite.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition.grpc_feature_config_kt_proto_lite.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition.grpc_google_asr_service_kt_grpc.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition.grpc_google_asr_service_kt_proto_lite.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition.grpc_google_asr_service_parcelables.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition.grpc_model_management_kt_proto_lite.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.android.libraries.speech.transcription.recognition_recognizer_mode_kt_proto_lite.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.frameworks.client.data.android.server.contrib.parcelables_parcelable_lists.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.frameworks.client.data.android.server.contrib.parcelables_parcelables.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/java.com.google.frameworks.client.data.android.server.contrib.parcelables_server_interceptor.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/parcelize-runtime.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/third_party.kotlin.grpc_kotlin.stub.src.main.java.io.grpc.kotlin_call_options_android.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/third_party.kotlin.grpc_kotlin.stub.src.main.java.io.grpc.kotlin_context_android.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/third_party.kotlin.grpc_kotlin.stub.src.main.java.io.grpc.kotlin_stub_android.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/third_party.kotlin.protobuf.src.commonMain.kotlin.com.google.protobuf.kotlin_only_for_use_in_proto_generated_code_its_generator_and_tests.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/1bc1ca1b6b04d8aec5fcf497fec401fa/transformed/genai-speech-recognition-1.0.0-alpha1-api.jar!/META-INF/third_party.kotlin.protobuf.src.commonMain.kotlin.com.google.protobuf.kotlin_shared_runtime.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/8.11.1/transforms/87b8e44623f6150632aa4300eb41ad05/transformed/genai-common-1.0.0-beta3-api.jar!/META-INF/java.com.google.android.libraries.mlkit.granules.genai.common_mlkit_genai_common.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.20/5380b19fa1924399b62ce3a1faffebb2b4f82272/kotlin-stdlib-2.2.20.jar!/META-INF/kotlin-stdlib-jdk7.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.20/5380b19fa1924399b62ce3a1faffebb2b4f82272/kotlin-stdlib-2.2.20.jar!/META-INF/kotlin-stdlib-jdk8.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-e: file:///home/runner/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.20/5380b19fa1924399b62ce3a1faffebb2b4f82272/kotlin-stdlib-2.2.20.jar!/META-INF/kotlin-stdlib.kotlin_module Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 2.0.0.
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1788553054087.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1788553261777.json
 
 FAILURE: Build failed with an exception.
 
 * What went wrong:
 Execution failed for task ':app:compileReleaseKotlin'.
 > A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
-   > Internal compiler error. See log for more details
+   > Compilation error. See log for more details
 
 * Try:
 > Run with --stacktrace option to get the stack trace.
@@ -141,5 +71,5 @@ Execution failed for task ':app:compileReleaseKotlin'.
 > Run with --scan to get full insights.
 > Get more help at https://help.gradle.org.
 
-BUILD FAILED in 32s
+BUILD FAILED in 1m 28s
 36 actionable tasks: 36 executed
