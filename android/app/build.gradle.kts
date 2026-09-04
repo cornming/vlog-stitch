@@ -13,6 +13,27 @@ android {
     namespace = "tw.cornming.vlogstitch"
     compileSdk = 35
 
+    /*
+     * 固定的簽章金鑰。
+     *
+     * 原本用 debug 簽章，但 debug 金鑰是建置機器自動產生的，而 GitHub Actions
+     * 的 runner 每次都是全新機器，等於每次建置都換一把金鑰。Android 不允許用
+     * 不同簽章的 APK 覆蓋安裝，更新就會失敗並顯示「未安裝應用程式」。
+     *
+     * 預設用 repo 裡的金鑰檔；設了 RELEASE_KEYSTORE_PATH 環境變數就改用那一把，
+     * 方便日後改成 GitHub secret 而不必動程式。
+     */
+    signingConfigs {
+        create("release") {
+            val envPath = System.getenv("RELEASE_KEYSTORE_PATH")
+            storeFile = if (envPath.isNullOrBlank())
+                rootProject.file("keystore/vlog-stitch.jks") else file(envPath)
+            storePassword = System.getenv("RELEASE_STORE_PASSWORD") ?: "vlogstitch"
+            keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "vlogstitch"
+            keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: "vlogstitch"
+        }
+    }
+
     defaultConfig {
         applicationId = "tw.cornming.vlogstitch"
         minSdk = 29
@@ -31,8 +52,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            // 沒有正式簽章金鑰，release 也用 debug 簽章，方便直接安裝驗證
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
