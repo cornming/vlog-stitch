@@ -71,6 +71,10 @@ python3 -m http.server 8080
 
 **聲音解碼有可能失敗。** 實測在 Android 上遇過 `canDecode()` 回報 true、但 WebCodecs 的 `AudioDecoder` 建立時仍丟 `EncodingError: Decoding error.`。重新編碼模式因此採三層退路：WebCodecs → Web Audio 的 `decodeAudioData` → 等長靜音。任何一層成功就繼續，不會讓整趟匯出白跑，實際走到哪一層記錄裡都寫得清楚。
 
+**素材必須真的在手機本機。** 從 Google 相簿、OneDrive 之類的雲端相簿選檔案時，拿到的可能只是佔位參照，讀取時會丟 `TypeError: network error`。開檔前會先試讀開頭幾十 KB，讀不到就直接指名是哪一段，不會跑到一半才失敗。
+
+**記憶體不是瓶頸，儲存空間才是。** 讀取端是串流的，不會把素材載進記憶體；成品也直接寫進 OPFS。真正的上限是瀏覽器給的磁碟配額（實測 Android 上約 10GB）。匯出前會估算成品大小並跟可用空間比對，不夠就先擋下來。
+
 **手機不一定解得開 HEVC。** 不少 Android 手機預設用 H.265 錄影，但 Chrome 的 WebCodecs 對 HEVC 支援看裝置。重新編碼模式開始前會先用 `canDecode()` 檢查，解不開會直接擋下並指出是哪一段，不會跑到一半才失敗。快速接片不需要解碼，所以不受影響。
 
 **只有即時錄製模式會跑滿影片長度。** 那是 MediaRecorder 錄 canvas 的舊做法，留著當退路。匯出中都不要切到別的 App。

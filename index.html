@@ -346,7 +346,7 @@ self.onmessage=async e=>{
    ============================================================ */
 
 /* 每次改動都要更新，診斷記錄會印出來，用來確認手機拿到的是不是新版 */
-const APP_VERSION='v5 (2026-09-04)　聲音三層退路／位元組比對修正／幀率上限';
+const APP_VERSION='v6 (2026-09-04)　逐段開檔記錄／空間預估／雲端檔案偵測';
 
 const FONT='system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
 const FPS=30;
@@ -1060,17 +1060,33 @@ const xport={
 
   async openAll(lib){
     const out=[];
-    for(const c of state.clips){
-      const input=new lib.Input({formats:lib.ALL_FORMATS,source:new lib.BlobSource(c.file)});
-      const vt=await input.getPrimaryVideoTrack();
-      if(!vt)throw new Error('「'+c.name+'」裡面找不到影像軌');
-      const at=await input.getPrimaryAudioTrack();
-      out.push({
-        clip:c,input,vt,at,
-        vcfg:await vt.getDecoderConfig(),
-        acfg:at?await at.getDecoderConfig():null
-      });
+    for(let i=0;i<state.clips.length;i++){
+      const c=state.clips[i];
+      dbg.add(`開啟 [${i+1}] ${c.name}（${(c.file.size/1048576).toFixed(1)}MB）`);
+      try{
+        /* 先摸一下開頭，確認這個 File 真的拿得到位元組。
+           從雲端相簿選的檔案在這一步就會丟 network error。 */
+        await c.file.slice(0,65536).arrayBuffer();
+      }catch(e){
+        dbg.add(`開啟 [${i+1}] 讀不到內容：${e.name||''} ${e.message}`);
+        throw new Error(`讀不到第 ${i+1} 段「${c.name}」的內容。這個檔案多半不在手機本機（例如從 Google 相簿、OneDrive 之類的雲端選的），要先下載成本機檔案再選一次`);
+      }
+      try{
+        const input=new lib.Input({formats:lib.ALL_FORMATS,source:new lib.BlobSource(c.file)});
+        const vt=await input.getPrimaryVideoTrack();
+        if(!vt)throw new Error('裡面找不到影像軌');
+        const at=await input.getPrimaryAudioTrack();
+        out.push({
+          clip:c,input,vt,at,
+          vcfg:await vt.getDecoderConfig(),
+          acfg:at?await at.getDecoderConfig():null
+        });
+      }catch(e){
+        dbg.add(`開啟 [${i+1}] 解析失敗：${e.name||''} ${e.message}`);
+        throw new Error(`第 ${i+1} 段「${c.name}」解析失敗：${e.message}`);
+      }
     }
+    dbg.add('全部 '+out.length+' 段都開啟成功');
     return out;
   },
 
@@ -1102,6 +1118,28 @@ const xport={
       }
     }
     return problems;
+  },
+
+  /* 成品要寫進 OPFS，先看空間夠不夠。讀取端是串流的，不吃記憶體，
+     真正的限制是磁碟配額。 */
+  async checkSpace(mode,inMB){
+    try{
+      if(!(navigator.storage&&navigator.storage.estimate))return;
+      const q=await navigator.storage.estimate();
+      const freeMB=(q.quota-q.usage)/1048576;
+      /* 轉封裝的成品約等於素材總和；重新編碼看位元率與長度 */
+      const needMB=mode==='fast'
+        ? inMB*1.02
+        : totalLen()*((state.res>=1080?10e6:6e6)+128e3)/8/1048576;
+      dbg.add(`預估成品約 ${needMB.toFixed(0)}MB，可用空間約 ${freeMB.toFixed(0)}MB`);
+      if(needMB>freeMB)
+        throw new Error(`空間不夠：預估成品約 ${(needMB/1024).toFixed(1)}GB，但瀏覽器只剩 ${(freeMB/1024).toFixed(1)}GB 可用。先分批處理，或改用 720p / 較低幀率`);
+      if(needMB>freeMB*0.8)
+        dbg.add('警告：空間只夠剛好，中途可能寫不下');
+    }catch(e){
+      if(/空間不夠/.test(e.message))throw e;
+      dbg.add('空間估算失敗（'+e.message+'），照常繼續');
+    }
   },
 
   /* 輸出目的地：優先寫進 OPFS（不吃記憶體），失敗才退回全部塞記憶體 */
@@ -1349,7 +1387,7 @@ const xport={
       dbg.add('選擇的模式：'+state.mode+'，片段 '+state.clips.length+' 段，總長 '+totalLen().toFixed(1)+'s');
       const inMB=state.clips.reduce((a,c)=>a+(c.file.size||0),0)/1048576;
       dbg.add('素材總大小 '+inMB.toFixed(1)+'MB');
-      if(totalLen()>600)dbg.add('注意：成品超過 10 分鐘，手機資源會很吃緊');
+      if(totalLen()>600)dbg.add('注意：成品超過 10 分鐘。快速接片只受儲存空間限制；重新編碼會跑很久');
 
       try{if('wakeLock'in navigator)xport.wake=await navigator.wakeLock.request('screen');}catch(e){}
       ui.expStatus('讀取影片資訊…');
@@ -1374,6 +1412,7 @@ const xport={
       if(mode==='encode'&&state.mode==='fast')
         ui.expStatus('片段規格不一致，改用重新編碼。','warn');
 
+      await xport.checkSpace(mode,inMB);
       const dest=await xport.makeTarget(lib);
       const res=mode==='fast'?await xport.remux(lib,list,dest):await xport.encode(lib,list,dest);
       const blob=await dest.finish();
