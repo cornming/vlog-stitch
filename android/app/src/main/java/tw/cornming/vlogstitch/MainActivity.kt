@@ -81,13 +81,19 @@ class MainActivity : AppCompatActivity() {
         busy = true
         b.btnExport.text = getString(R.string.stop)
         b.btnPick.isEnabled = false
+        b.modeGroup.isEnabled = false
         b.progress.progress = 0
         b.log.text = ""
         log("開始匯出")
 
         val ex = Exporter(this)
         exporter = ex
-        ex.start(clips, object : Exporter.Callback {
+        val mode = when {
+            b.modeMux.isChecked -> Exporter.Mode.TRANSMUX_ONLY
+            b.modeEnc.isChecked -> Exporter.Mode.REENCODE_SDR
+            else -> Exporter.Mode.AUTO
+        }
+        ex.start(clips, mode, object : Exporter.Callback {
             override fun onProgress(percent: Int) {
                 runOnUiThread {
                     b.progress.progress = percent

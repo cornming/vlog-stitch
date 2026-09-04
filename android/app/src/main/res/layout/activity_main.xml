@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:padding="14dp">
+    android:orientation="vertical" android:padding="14dp"
+    android:fitsSystemWindows="true">
 
     <TextView android:id="@+id/count"
         android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -15,6 +16,20 @@
     <androidx.recyclerview.widget.RecyclerView android:id="@+id/list"
         android:layout_width="match_parent" android:layout_height="0dp"
         android:layout_weight="1" android:paddingTop="6dp" />
+
+    <RadioGroup android:id="@+id/modeGroup"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:layout_marginTop="4dp">
+        <RadioButton android:id="@+id/modeAuto" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:checked="true"
+            android:text="@string/mode_auto" android:textSize="13sp" />
+        <RadioButton android:id="@+id/modeMux" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:layout_marginStart="8dp"
+            android:text="@string/mode_mux" android:textSize="13sp" />
+        <RadioButton android:id="@+id/modeEnc" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:layout_marginStart="8dp"
+            android:text="@string/mode_enc" android:textSize="13sp" />
+    </RadioGroup>
 
     <ProgressBar android:id="@+id/progress"
         style="?android:attr/progressBarStyleHorizontal"

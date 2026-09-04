@@ -21,4 +21,7 @@
     <string name="download">下載更新</string>
     <string name="later">稍後再說</string>
     <string name="no_releases">還沒有任何發佈紀錄，或是連不上網路。</string>
+    <string name="mode_auto">自動</string>
+    <string name="mode_mux">只轉封裝</string>
+    <string name="mode_enc">重編轉SDR</string>
 </resources>
