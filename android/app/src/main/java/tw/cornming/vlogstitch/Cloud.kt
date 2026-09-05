@@ -29,7 +29,9 @@ object Cloud {
         return Config(
             p.getString("az_endpoint", "").orEmpty(),
             p.getString("az_key", "").orEmpty(),
-            p.getString("az_locale", "zh-CN").orEmpty()
+            // 預設用台灣繁體國語。Fast transcription 的官方清單只列到 zh-CN，
+            // 但批次轉錄支援 zh-TW，實際能不能用以服務回報為準，不能用會退回 zh-CN。
+            p.getString("az_locale", "zh-TW").orEmpty()
         )
     }
 

@@ -68,7 +68,8 @@
     <string name="cloud_dialog">Azure AI Speech 設定</string>
     <string name="cloud_endpoint_hint">端點或區域，例如 southeastasia</string>
     <string name="cloud_key_hint">金鑰 KEY 1</string>
-    <string name="cloud_locale_hint">語言，例如 zh-CN</string>
+    <string name="cloud_locale_hint">語言，例如 zh-TW</string>
+    <string name="cloud_pick_locale">從清單選語言</string>
     <string name="cloud_extracting">正在抽出聲音軌（不重新編碼）…</string>
     <string name="cloud_uploading">上傳並辨識中，長音訊要等一下…</string>
     <string name="asr_check">檢查支援</string>

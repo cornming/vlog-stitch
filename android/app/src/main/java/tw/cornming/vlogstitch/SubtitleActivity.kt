@@ -256,14 +256,30 @@ class SubtitleActivity : AppCompatActivity() {
         val loc = EditText(this).apply {
             setText(cfg.locale); hint = getString(R.string.cloud_locale_hint); setSingleLine()
         }
-        box.addView(ep); box.addView(key); box.addView(loc)
+        val quick = com.google.android.material.button.MaterialButton(
+            this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            text = getString(R.string.cloud_pick_locale)
+            setOnClickListener {
+                val codes = arrayOf("zh-TW", "zh-CN", "yue-Hant-HK", "en-US", "ja-JP")
+                val names = arrayOf(
+                    "中文（繁體，國語）zh-TW", "中文（國語，簡體）zh-CN",
+                    "中文（粵語，繁體）yue-Hant-HK", "英文 en-US", "日文 ja-JP"
+                )
+                AlertDialog.Builder(this@SubtitleActivity)
+                    .setTitle(R.string.cloud_pick_locale)
+                    .setItems(names) { _, w -> loc.setText(codes[w]) }
+                    .show()
+            }
+        }
+        box.addView(ep); box.addView(key); box.addView(loc); box.addView(quick)
         AlertDialog.Builder(this)
             .setTitle(R.string.cloud_dialog)
             .setView(box)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 Cloud.save(this, Cloud.Config(
                     ep.text.toString(), key.text.toString(),
-                    loc.text.toString().ifBlank { "zh-CN" }))
+                    loc.text.toString().ifBlank { "zh-TW" }))
                 toast("已儲存")
             }
             .setNegativeButton(android.R.string.cancel, null)
@@ -357,6 +373,12 @@ class SubtitleActivity : AppCompatActivity() {
             } catch (t: Throwable) {
                 asrLog("雲端辨識失敗：${t.javaClass.simpleName}")
                 asrLog(t.message ?: "（沒有訊息）")
+                val m = t.message.orEmpty()
+                if (m.contains("locale", true) || m.contains("400")) {
+                    asrLog("→ 看起來是語言不被這個端點接受。" +
+                        "Fast transcription 的官方清單只列到 zh-CN，" +
+                        "可以先改用 zh-CN 產生簡體字幕，之後再轉繁體。")
+                }
             } finally {
                 b.cloudProgress.visibility = View.GONE
                 b.btnCloud.isEnabled = true
