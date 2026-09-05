@@ -1,6 +1,8 @@
 package tw.cornming.vlogstitch
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.content.Intent
 import android.os.Bundle
@@ -15,6 +17,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
@@ -38,6 +41,32 @@ class SubtitleActivity : AppCompatActivity() {
     private var clipUris = ArrayList<Uri>()
     private var asrJob: Job? = null
     private val asrCancel = AtomicBoolean(false)
+    private var pendingAsrAction: (() -> Unit)? = null
+
+    private val askMic = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            asrLog("已取得錄音權限")
+            pendingAsrAction?.invoke()
+        } else {
+            asrLog("錄音權限被拒。語音辨識引擎需要這個權限才會啟動，" +
+                "即使音訊來自檔案而不是麥克風。")
+        }
+        pendingAsrAction = null
+    }
+
+    private fun hasMic() = ContextCompat.checkSelfPermission(
+        this, Manifest.permission.RECORD_AUDIO
+    ) == PackageManager.PERMISSION_GRANTED
+
+    /** 引擎會檢查 RECORD_AUDIO，沒有就回 ERROR_TYPE_INSUFFICIENT_PERMISSION */
+    private fun withMic(action: () -> Unit) {
+        if (hasMic()) { action(); return }
+        asrLog("尚未取得錄音權限，向系統要求…")
+        pendingAsrAction = action
+        askMic.launch(Manifest.permission.RECORD_AUDIO)
+    }
 
     private val importSrt = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -94,8 +123,10 @@ class SubtitleActivity : AppCompatActivity() {
         b.btnSelectNone.setOnClickListener { setAll(false) }
         b.btnDelete.setOnClickListener { deleteSelected() }
 
-        b.btnAsr.setOnClickListener { if (asrJob != null) stopAsr() else startAsr() }
-        b.btnAsrCheck.setOnClickListener { checkAsr() }
+        b.btnAsr.setOnClickListener {
+            if (asrJob != null) stopAsr() else { b.asrLog.text = ""; withMic { startAsr() } }
+        }
+        b.btnAsrCheck.setOnClickListener { b.asrLog.text = ""; withMic { checkAsr() } }
         b.btnAsrCopy.setOnClickListener { copyAsrLog() }
         setupAsrBox()
         refresh()
@@ -129,8 +160,8 @@ class SubtitleActivity : AppCompatActivity() {
 
     /** 只測 API，不碰音訊，用來確認問題出在哪一端 */
     private fun checkAsr() {
-        b.asrLog.text = ""
         lifecycleScope.launch {
+            asrLog("錄音權限：${if (hasMic()) "已授予" else "未授予"}")
             try {
                 Transcriber.checkOnly(
                     Transcriber.advancedSupported(),
@@ -152,8 +183,8 @@ class SubtitleActivity : AppCompatActivity() {
         b.asrProgress.visibility = View.VISIBLE
         b.asrProgress.progress = 0
         b.asrStatus.text = ""
-        b.asrLog.text = ""
         asrLog("== 開始 ==")
+        asrLog("錄音權限：${if (hasMic()) "已授予" else "未授予"}")
         val before = subs.size
         asrJob = lifecycleScope.launch {
             try {

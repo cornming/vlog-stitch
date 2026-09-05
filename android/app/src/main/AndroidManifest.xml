@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 語音辨識引擎要求這個權限才會啟動，即使音訊來自檔案而非麥克風。
+         沒有它會回 ERROR_TYPE_INSUFFICIENT_PERMISSION。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 

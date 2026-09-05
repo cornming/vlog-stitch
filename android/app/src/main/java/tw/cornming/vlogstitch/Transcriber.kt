@@ -61,7 +61,8 @@ object Transcriber {
     ): List<Subtitle> = withContext(Dispatchers.IO) {
 
         log("裝置 ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
-        log("模式 ${if (advanced) "Advanced（Gemini Nano）" else "Basic"}　語言 $locale")
+        log("模式 ${if (advanced) "Advanced（Gemini Nano）" else "Basic"}")
+        log("語言標籤 ${locale.toLanguageTag()}（應為 cmn-Hant-TW）")
 
         log("步驟 1：建立辨識器")
         val recognizer: SpeechRecognizer = try {
