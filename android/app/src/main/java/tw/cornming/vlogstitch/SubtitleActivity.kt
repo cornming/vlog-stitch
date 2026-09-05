@@ -43,6 +43,7 @@ class SubtitleActivity : AppCompatActivity() {
     private var clipUris = ArrayList<Uri>()
     private var asrJob: Job? = null
     private var lastResponse: String? = null
+    private var lastSegments: List<AudioTrack.Segment> = emptyList()
     private val asrCancel = AtomicBoolean(false)
     private var pendingAsrAction: (() -> Unit)? = null
 
@@ -138,6 +139,7 @@ class SubtitleActivity : AppCompatActivity() {
         b.btnCloud.setOnClickListener { b.asrLog.text = ""; cloudRun() }
         b.genToggle.setOnClickListener { toggleGen() }
         b.btnCloudJson.setOnClickListener { saveResponse() }
+        b.btnCloudAudio.setOnClickListener { shareSegment() }
         setupAsrBox()
         refresh()
     }
@@ -272,14 +274,18 @@ class SubtitleActivity : AppCompatActivity() {
                     .show()
             }
         }
-        box.addView(ep); box.addView(key); box.addView(loc); box.addView(quick)
+        val wav = android.widget.CheckBox(this).apply {
+            text = getString(R.string.cloud_use_wav)
+            isChecked = cfg.useWav
+        }
+        box.addView(ep); box.addView(key); box.addView(loc); box.addView(quick); box.addView(wav)
         AlertDialog.Builder(this)
             .setTitle(R.string.cloud_dialog)
             .setView(box)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 Cloud.save(this, Cloud.Config(
                     ep.text.toString(), key.text.toString(),
-                    loc.text.toString().ifBlank { "zh-TW" }))
+                    loc.text.toString().ifBlank { "zh-TW" }, wav.isChecked))
                 toast("已儲存")
             }
             .setNegativeButton(android.R.string.cancel, null)
@@ -303,6 +309,27 @@ class SubtitleActivity : AppCompatActivity() {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }, getString(R.string.cloud_save_json)))
         } catch (t: Throwable) { toast("存檔失敗：${t.message}") }
+    }
+
+    /**
+     * 把抽出來的音訊檔分享出去。
+     * 同一個檔案自己丟去 Speech Studio 試，就能分辨是「檔案不合格」
+     * 還是「我送出的請求有問題」——這是最快的二分法。
+     */
+    private fun shareSegment() {
+        val segs = lastSegments
+        if (segs.isEmpty()) { toast("還沒有抽出音訊，先跑一次辨識"); return }
+        val f = segs.first().file
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", f)
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = if (f.name.endsWith(".wav")) "audio/wav" else "audio/mp4"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }, getString(R.string.cloud_share_audio)))
+            asrLog("分享 ${f.name}（${f.length() / 1024} KB）")
+        } catch (t: Throwable) { toast("分享失敗：${t.message}") }
     }
 
     private fun cloudReady(): Cloud.Config? {
@@ -342,22 +369,32 @@ class SubtitleActivity : AppCompatActivity() {
             try {
                 asrLog(getString(R.string.cloud_extracting))
                 lastResponse = null
+                val segDir = java.io.File(
+                    getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS), "asr")
+                lastSegments = emptyList()
                 val segs = withContext(Dispatchers.IO) {
-                    val dir = java.io.File(
-                        getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS), "asr")
-                    // 每段十分鐘。單檔小、上傳快，壞掉也只壞一段。
-                    AudioTrack.extractSegments(
-                        this@SubtitleActivity, clipUris, dir, 10 * 60 * 1000L
-                    ) { l -> asrLog(l) }
+                    // 每段十分鐘。單檔小、上傳快，出問題也只影響一段。
+                    if (cfg.useWav) {
+                        asrLog("轉成 16kHz 單聲道 WAV（相容性最好）")
+                        AudioTrack.wavSegments(
+                            this@SubtitleActivity, clipUris, segDir, 10 * 60 * 1000L
+                        ) { l -> asrLog(l) }
+                    } else {
+                        asrLog("直接抄原始 AAC 音軌（檔案小，但服務端可能不收）")
+                        AudioTrack.extractSegments(
+                            this@SubtitleActivity, clipUris, segDir, 10 * 60 * 1000L
+                        ) { l -> asrLog(l) }
+                    }
                 }
+                lastSegments = segs
                 if (segs.isEmpty()) { asrLog("抽不出聲音軌"); return@launch }
 
-                asrLog("驗證分段檔案…")
-                val bad = withContext(Dispatchers.IO) {
-                    segs.filterNot { AudioTrack.verify(this@SubtitleActivity, it.file) { l -> asrLog(l) } }
-                }
-                if (bad.isNotEmpty()) {
-                    asrLog("有 ${bad.size} 段檔案不完整，請重試"); return@launch
+                if (!cfg.useWav) {
+                    asrLog("驗證分段檔案…")
+                    val bad = withContext(Dispatchers.IO) {
+                        segs.filterNot { AudioTrack.verify(this@SubtitleActivity, it.file) { l -> asrLog(l) } }
+                    }
+                    if (bad.isNotEmpty()) { asrLog("有 ${bad.size} 段檔案不完整，請重試"); return@launch }
                 }
 
                 val got = ArrayList<Subtitle>()

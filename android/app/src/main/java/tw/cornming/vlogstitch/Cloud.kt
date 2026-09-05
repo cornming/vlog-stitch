@@ -22,7 +22,11 @@ object Cloud {
     private const val API_VERSION = "2025-10-15"
     private const val PREFS = "vlog-stitch"
 
-    data class Config(val endpoint: String, val key: String, val locale: String)
+    data class Config(
+        val endpoint: String, val key: String, val locale: String,
+        /** true 送 WAV（相容性最好），false 送原始 AAC 音軌（檔案小但服務端可能不收） */
+        val useWav: Boolean = true
+    )
 
     fun load(ctx: Context): Config {
         val p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -31,7 +35,8 @@ object Cloud {
             p.getString("az_key", "").orEmpty(),
             // 預設用台灣繁體國語。Fast transcription 的官方清單只列到 zh-CN，
             // 但批次轉錄支援 zh-TW，實際能不能用以服務回報為準，不能用會退回 zh-CN。
-            p.getString("az_locale", "zh-TW").orEmpty()
+            p.getString("az_locale", "zh-TW").orEmpty(),
+            p.getBoolean("az_wav", true)
         )
     }
 
@@ -40,6 +45,7 @@ object Cloud {
             .putString("az_endpoint", c.endpoint.trim())
             .putString("az_key", c.key.trim())
             .putString("az_locale", c.locale.trim())
+            .putBoolean("az_wav", c.useWav)
             .apply()
     }
 
@@ -97,7 +103,8 @@ object Cloud {
             "Content-Disposition: form-data; name=\"definition\"\r\n\r\n" +
             definition + "\r\n--$boundary\r\n" +
             "Content-Disposition: form-data; name=\"audio\"; filename=\"${audio.name}\"\r\n" +
-            "Content-Type: audio/mp4\r\n\r\n").toByteArray(Charsets.UTF_8)
+            "Content-Type: ${if (audio.name.endsWith(".wav")) "audio/wav" else "audio/mp4"}\r\n\r\n")
+            .toByteArray(Charsets.UTF_8)
         val tail = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
         val total = head.size + audio.length() + tail.size
 

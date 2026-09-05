@@ -130,6 +130,66 @@ object AudioTrack {
         return segments
     }
 
+    /**
+     * 解碼成 16 kHz 單聲道 WAV。
+     *
+     * 直接抄 AAC 音軌雖然快，但服務端不見得吃得下該編碼設定（實測回
+     * InvalidAudioFormat）。WAV 是未壓縮的原始取樣，幾乎沒有任何服務會拒絕，
+     * 代價是檔案大一些：十分鐘約 19 MB，43 分鐘約 82 MB，仍在 200 MB 限制內。
+     */
+    fun wavSegments(
+        ctx: Context,
+        clips: List<Uri>,
+        dir: File,
+        segmentMs: Long,
+        log: (String) -> Unit
+    ): List<Segment> {
+        dir.mkdirs()
+        dir.listFiles()?.forEach { if (it.name.startsWith("wav-") || it.name.startsWith("pcm-")) it.delete() }
+
+        val out = ArrayList<Segment>()
+        val bytesPerSeg = AudioPcm.BYTES_PER_SEC.toLong() * (segmentMs / 1000)
+        var raw: File? = null
+        var os: java.io.FileOutputStream? = null
+        var written = 0L
+        var globalMs = 0L
+
+        fun finish() {
+            val r = raw ?: return
+            try { os?.flush(); os?.close() } catch (_: Exception) {}
+            if (written > 0) {
+                val wav = File(dir, "wav-%03d.wav".format(out.size + 1))
+                AudioPcm.writeWav(r, wav)
+                val durMs = written * 1000 / AudioPcm.BYTES_PER_SEC
+                out.add(Segment(wav, globalMs, durMs))
+                globalMs += durMs
+                log("段 ${out.size}：${wav.length() / 1024} KB，長 ${Media.fmtDuration(durMs)}")
+            }
+            r.delete()
+            raw = null; os = null; written = 0
+        }
+
+        try {
+            for ((i, uri) in clips.withIndex()) {
+                AudioPcm.decodeTo16kMono(ctx, uri, log) { chunk ->
+                    if (raw == null) {
+                        raw = File(dir, "pcm-tmp.raw")
+                        os = java.io.FileOutputStream(raw)
+                    }
+                    os!!.write(chunk)
+                    written += chunk.size
+                    if (written >= bytesPerSeg) finish()
+                    true
+                }
+                log("[${i + 1}] 解碼完成")
+            }
+        } finally {
+            finish()
+        }
+        log("共 ${out.size} 段 WAV，總長 ${Media.fmtDuration(globalMs)}")
+        return out
+    }
+
     /** 抄完之後回頭讀一次，確認檔案真的能解析。壞掉的檔在這裡就會現形。 */
     fun verify(ctx: Context, f: File, log: (String) -> Unit): Boolean = try {
         val ex = MediaExtractor()

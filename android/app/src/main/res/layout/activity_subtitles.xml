@@ -69,6 +69,10 @@
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content" android:layout_height="46dp"
                 android:minWidth="0dp" android:textSize="13sp" android:text="@string/cloud_setup" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnCloudAudio"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content" android:layout_height="46dp"
+                android:minWidth="0dp" android:textSize="13sp" android:text="@string/cloud_share_audio" />
             <com.google.android.material.button.MaterialButton android:id="@+id/btnCloudJson"
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content" android:layout_height="46dp"
