@@ -1,6 +1,7 @@
 package tw.cornming.vlogstitch
 
 import android.content.Context
+import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
@@ -9,72 +10,146 @@ import java.io.File
 import java.nio.ByteBuffer
 
 /**
- * 把 mp4 裡的聲音軌「原封不動」抄成一個 m4a。
+ * 把 mp4 的聲音軌原封不動抄出來，不解碼、不重取樣。
  *
- * 完全不解碼、不重取樣——雲端服務吃得下壓縮音訊，所以先前那套自己寫的
- * PCM 管線在這條路上完全用不到，也就不會再出錯。
- * 43 分鐘的 AAC 大約 40 MB，遠低於服務端的檔案上限。
+ * 會切成多個小檔：mp4 的索引（moov）寫在檔尾，一次傳一個大檔時只要上傳被
+ * 截斷，整個檔案就解不開；分段之後單檔小、失敗範圍也小，還能顯示進度。
  */
 object AudioTrack {
 
-    fun extract(ctx: Context, clips: List<Uri>, out: File, log: (String) -> Unit): File {
-        val muxer = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-        var outTrack = -1
-        var started = false
-        var offsetUs = 0L
+    data class Segment(val file: File, val startMs: Long, val durationMs: Long)
+
+    /**
+     * @param segmentMs 每段的目標長度，實際會在取樣邊界切
+     */
+    fun extractSegments(
+        ctx: Context,
+        clips: List<Uri>,
+        dir: File,
+        segmentMs: Long,
+        log: (String) -> Unit
+    ): List<Segment> {
+        dir.mkdirs()
+        dir.listFiles()?.forEach { if (it.name.startsWith("seg-")) it.delete() }
+
+        val segments = ArrayList<Segment>()
         val buf = ByteBuffer.allocate(1 shl 20)
+        val info = MediaCodec.BufferInfo()
+
+        var muxer: MediaMuxer? = null
+        var outTrack = -1
+        var segFile: File? = null
+        var segStartMs = 0L          // 這一段在整體時間軸上的起點
+        var segFirstUs = -1L         // 這一段第一個取樣的時間，用來歸零
+        var segLastUs = 0L
+        var globalMs = 0L            // 已經處理掉的總長度
+        var fmt: MediaFormat? = null
+
+        fun closeSegment() {
+            val m = muxer ?: return
+            try {
+                m.stop()
+            } catch (e: Exception) {
+                // 這裡失敗代表 moov 沒寫進去，檔案是壞的，一定要講出來
+                log("!! 收尾失敗，這一段可能不完整：${e.message}")
+            } finally {
+                try { m.release() } catch (_: Exception) {}
+            }
+            val f = segFile
+            if (f != null && f.length() > 1024) {
+                val dur = if (segFirstUs >= 0) (segLastUs - segFirstUs) / 1000 else 0L
+                segments.add(Segment(f, segStartMs, dur))
+                log("段 ${segments.size}：${f.length() / 1024} KB，" +
+                    "${Media.fmtDuration(segStartMs)} 起，長 ${Media.fmtDuration(dur)}")
+            }
+            muxer = null; segFile = null; outTrack = -1; segFirstUs = -1; segLastUs = 0
+        }
+
+        fun openSegment(format: MediaFormat, startMs: Long) {
+            val f = File(dir, "seg-%03d.m4a".format(segments.size + 1))
+            val m = MediaMuxer(f.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            outTrack = m.addTrack(format)
+            m.start()
+            muxer = m; segFile = f; segStartMs = startMs; segFirstUs = -1; segLastUs = 0
+        }
 
         try {
-            for ((i, uri) in clips.withIndex()) {
+            for ((ci, uri) in clips.withIndex()) {
                 val ex = MediaExtractor()
                 try {
                     ex.setDataSource(ctx, uri, null)
                     var track = -1
-                    var fmt: MediaFormat? = null
                     for (t in 0 until ex.trackCount) {
                         val f = ex.getTrackFormat(t)
                         if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
                             track = t; fmt = f; break
                         }
                     }
-                    if (track < 0 || fmt == null) { log("[${i + 1}] 沒有聲音軌，略過"); continue }
-                    if (!started) {
-                        outTrack = muxer.addTrack(fmt)
-                        muxer.start()
-                        started = true
-                        log("聲音格式 ${fmt.getString(MediaFormat.KEY_MIME)} " +
-                            "${fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)}Hz " +
-                            "${fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)}ch")
-                    }
+                    val format = fmt
+                    if (track < 0 || format == null) { log("[${ci + 1}] 沒有聲音軌，略過"); continue }
+                    if (ci == 0) log("聲音格式 ${format.getString(MediaFormat.KEY_MIME)} " +
+                        "${format.getInteger(MediaFormat.KEY_SAMPLE_RATE)}Hz " +
+                        "${format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)}ch")
                     ex.selectTrack(track)
-                    val info = android.media.MediaCodec.BufferInfo()
-                    var last = 0L
-                    var n = 0
+
                     while (true) {
                         buf.clear()
                         val size = ex.readSampleData(buf, 0)
                         if (size < 0) break
+                        val us = ex.sampleTime
+                        if (muxer == null) openSegment(format, globalMs)
+                        if (segFirstUs < 0) segFirstUs = us
                         info.offset = 0
                         info.size = size
-                        info.presentationTimeUs = offsetUs + ex.sampleTime
+                        info.presentationTimeUs = us - segFirstUs      // 每段自己從 0 開始
                         info.flags = if (ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0)
-                            android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
-                        muxer.writeSampleData(outTrack, buf, info)
-                        last = ex.sampleTime
-                        n++
+                            MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
+                        muxer!!.writeSampleData(outTrack, buf, info)
+                        segLastUs = us
                         ex.advance()
+
+                        val segMs = (segLastUs - segFirstUs) / 1000
+                        if (segMs >= segmentMs) {
+                            globalMs += segMs
+                            closeSegment()
+                        }
                     }
-                    offsetUs += last + 20_000  // 補一格的長度，避免下一段時間戳重疊
-                    log("[${i + 1}] 抄了 $n 個音訊封包，累計 ${offsetUs / 1000} ms")
+                    if (muxer != null) {
+                        globalMs += (segLastUs - segFirstUs) / 1000
+                        closeSegment()
+                    }
                 } finally {
                     try { ex.release() } catch (_: Exception) {}
                 }
             }
         } finally {
-            try { if (started) muxer.stop() } catch (_: Exception) {}
-            try { muxer.release() } catch (_: Exception) {}
+            if (muxer != null) closeSegment()
         }
-        log("音軌檔 ${out.length() / 1024} KB")
-        return out
+
+        log("共 ${segments.size} 段，總長 ${Media.fmtDuration(globalMs)}")
+        return segments
+    }
+
+    /** 抄完之後回頭讀一次，確認檔案真的能解析。壞掉的檔在這裡就會現形。 */
+    fun verify(ctx: Context, f: File, log: (String) -> Unit): Boolean = try {
+        val ex = MediaExtractor()
+        try {
+            ex.setDataSource(f.absolutePath)
+            var ok = false
+            for (t in 0 until ex.trackCount) {
+                val fmt = ex.getTrackFormat(t)
+                if (fmt.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
+                    val dur = if (fmt.containsKey(MediaFormat.KEY_DURATION))
+                        fmt.getLong(MediaFormat.KEY_DURATION) / 1000 else -1
+                    log("  驗證 ${f.name}：可解析，長 ${dur} ms")
+                    ok = true
+                }
+            }
+            if (!ok) log("  驗證 ${f.name}：找不到聲音軌")
+            ok
+        } finally { try { ex.release() } catch (_: Exception) {} }
+    } catch (t: Throwable) {
+        log("  驗證 ${f.name} 失敗：${t.javaClass.simpleName} ${t.message ?: ""}")
+        false
     }
 }

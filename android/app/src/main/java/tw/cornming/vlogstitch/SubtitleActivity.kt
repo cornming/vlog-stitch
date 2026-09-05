@@ -341,21 +341,38 @@ class SubtitleActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 asrLog(getString(R.string.cloud_extracting))
-                val m4a = withContext(Dispatchers.IO) {
-                    val dir = getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)!!
-                    dir.mkdirs()
-                    val f = java.io.File(dir, "asr-audio.m4a")
-                    if (f.exists()) f.delete()
-                    AudioTrack.extract(this@SubtitleActivity, clipUris, f) { l -> asrLog(l) }
-                }
                 lastResponse = null
-                val mb = m4a.length() / 1048576
-                if (m4a.length() > Cloud.MAX_BYTES) {
-                    asrLog(getString(R.string.cloud_too_big, mb)); return@launch
+                val segs = withContext(Dispatchers.IO) {
+                    val dir = java.io.File(
+                        getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS), "asr")
+                    // 每段十分鐘。單檔小、上傳快，壞掉也只壞一段。
+                    AudioTrack.extractSegments(
+                        this@SubtitleActivity, clipUris, dir, 10 * 60 * 1000L
+                    ) { l -> asrLog(l) }
                 }
-                asrLog(getString(R.string.cloud_size, mb, Media.fmtDuration(totalMs)))
-                asrLog(getString(R.string.cloud_uploading))
-                val got = Cloud.transcribe(cfg, m4a, { r -> lastResponse = r }) { l -> asrLog(l) }
+                if (segs.isEmpty()) { asrLog("抽不出聲音軌"); return@launch }
+
+                asrLog("驗證分段檔案…")
+                val bad = withContext(Dispatchers.IO) {
+                    segs.filterNot { AudioTrack.verify(this@SubtitleActivity, it.file) { l -> asrLog(l) } }
+                }
+                if (bad.isNotEmpty()) {
+                    asrLog("有 ${bad.size} 段檔案不完整，請重試"); return@launch
+                }
+
+                val got = ArrayList<Subtitle>()
+                for ((i, seg) in segs.withIndex()) {
+                    asrLog("── 第 ${i + 1}/${segs.size} 段 ──")
+                    if (seg.file.length() > Cloud.MAX_BYTES) {
+                        asrLog("這一段超過服務端上限，略過"); continue
+                    }
+                    val part = Cloud.transcribe(cfg, seg.file, { r -> lastResponse = r }) { l -> asrLog(l) }
+                    // 每段檔案的時間都從 0 開始，要加回它在整體時間軸上的位置
+                    part.forEach {
+                        got.add(Subtitle(it.startMs + seg.startMs, it.endMs + seg.startMs, it.text))
+                    }
+                    asrLog("累計 ${got.size} 句")
+                }
                 if (got.isEmpty()) { asrLog("沒有取得任何字幕"); return@launch }
                 if (before > 0) {
                     AlertDialog.Builder(this@SubtitleActivity)

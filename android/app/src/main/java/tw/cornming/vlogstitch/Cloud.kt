@@ -90,7 +90,18 @@ object Cloud {
             .put("locales", JSONArray().put(cfg.locale))
             .toString()
 
-        log("上傳 ${audio.length() / 1024} KB 到 ${host(cfg.endpoint)}")
+        // 先把 multipart 的前後段算出來，才能用固定長度上傳。
+        // 用 chunked 傳輸時伺服器不知道預期大小，上傳被截斷也不會發現，
+        // 而 mp4 的索引寫在檔尾，少一點點就整個解不開。
+        val head = ("--$boundary\r\n" +
+            "Content-Disposition: form-data; name=\"definition\"\r\n\r\n" +
+            definition + "\r\n--$boundary\r\n" +
+            "Content-Disposition: form-data; name=\"audio\"; filename=\"${audio.name}\"\r\n" +
+            "Content-Type: audio/mp4\r\n\r\n").toByteArray(Charsets.UTF_8)
+        val tail = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
+        val total = head.size + audio.length() + tail.size
+
+        log("上傳 ${audio.length() / 1024} KB（含表單共 ${total / 1024} KB）")
         log("語言 ${cfg.locale}")
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -99,20 +110,25 @@ object Cloud {
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
             connectTimeout = 30000
             readTimeout = 15 * 60 * 1000   // 長音訊要等，但仍遠快於即時
-            setChunkedStreamingMode(1 shl 16)
         }
         try {
+            conn.setFixedLengthStreamingMode(total)
             DataOutputStream(conn.outputStream).use { out ->
-                out.writeBytes("--$boundary\r\n")
-                out.writeBytes("Content-Disposition: form-data; name=\"definition\"\r\n\r\n")
-                out.write(definition.toByteArray(Charsets.UTF_8))
-                out.writeBytes("\r\n--$boundary\r\n")
-                out.writeBytes(
-                    "Content-Disposition: form-data; name=\"audio\"; filename=\"${audio.name}\"\r\n"
-                )
-                out.writeBytes("Content-Type: audio/mp4\r\n\r\n")
-                audio.inputStream().use { it.copyTo(out) }
-                out.writeBytes("\r\n--$boundary--\r\n")
+                out.write(head)
+                var sent = 0L
+                val b = ByteArray(1 shl 16)
+                audio.inputStream().use { ins ->
+                    while (true) {
+                        val n = ins.read(b)
+                        if (n < 0) break
+                        out.write(b, 0, n)
+                        sent += n
+                    }
+                }
+                out.write(tail)
+                out.flush()
+                if (sent != audio.length())
+                    throw Exception("上傳不完整：$sent / ${audio.length()}")
             }
             val code = conn.responseCode
             val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
