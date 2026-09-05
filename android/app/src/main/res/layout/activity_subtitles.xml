@@ -37,6 +37,40 @@
         </LinearLayout>
     </LinearLayout>
 
+    <LinearLayout android:id="@+id/cloudBox"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:layout_marginStart="14dp"
+        android:layout_marginEnd="14dp" android:layout_marginTop="14dp"
+        android:padding="12dp" android:background="@drawable/banner_ok">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="@string/cloud_title" android:textColor="@color/ok"
+            android:textSize="13.5sp" android:textStyle="bold" />
+        <TextView android:id="@+id/cloudHint"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            style="@style/Label" android:paddingTop="3dp"
+            android:lineSpacingMultiplier="1.35" android:text="@string/cloud_hint" />
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/cloudProgress"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:indeterminate="true"
+            android:visibility="gone" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginTop="8dp">
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnCloudSetup"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content" android:layout_height="46dp"
+                android:minWidth="0dp" android:textSize="13sp" android:text="@string/cloud_setup" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnCloudLocales"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content" android:layout_height="46dp"
+                android:minWidth="0dp" android:textSize="13sp" android:text="@string/cloud_locales" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnCloud"
+                android:layout_width="0dp" android:layout_height="46dp"
+                android:layout_weight="1" android:layout_marginStart="6dp"
+                android:text="@string/cloud_run" />
+        </LinearLayout>
+    </LinearLayout>
+
     <LinearLayout android:id="@+id/asrBox"
         android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="vertical" android:layout_margin="14dp"

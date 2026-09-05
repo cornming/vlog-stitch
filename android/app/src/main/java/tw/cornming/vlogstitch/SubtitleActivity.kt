@@ -131,6 +131,9 @@ class SubtitleActivity : AppCompatActivity() {
         b.btnAsrCheck.setOnClickListener { b.asrLog.text = ""; withMic { checkAsr() } }
         b.btnAsrCopy.setOnClickListener { copyAsrLog() }
         b.btnAsrWav.setOnClickListener { b.asrLog.text = ""; dumpWav() }
+        b.btnCloudSetup.setOnClickListener { cloudSetup() }
+        b.btnCloudLocales.setOnClickListener { b.asrLog.text = ""; cloudLocales() }
+        b.btnCloud.setOnClickListener { b.asrLog.text = ""; cloudRun() }
         setupAsrBox()
         refresh()
     }
@@ -221,6 +224,104 @@ class SubtitleActivity : AppCompatActivity() {
                 }, getString(R.string.asr_wav)))
             } catch (t: Throwable) {
                 asrLog("匯出音訊失敗：${t.javaClass.simpleName} ${t.message ?: ""}")
+            }
+        }
+    }
+
+    // ---------------- 雲端辨識 ----------------
+
+    private fun cloudSetup() {
+        val cfg = Cloud.load(this)
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(pad, pad, pad, 0)
+        }
+        val ep = EditText(this).apply {
+            setText(cfg.endpoint); hint = getString(R.string.cloud_endpoint_hint); setSingleLine()
+        }
+        val key = EditText(this).apply {
+            setText(cfg.key); hint = getString(R.string.cloud_key_hint); setSingleLine()
+        }
+        val loc = EditText(this).apply {
+            setText(cfg.locale); hint = getString(R.string.cloud_locale_hint); setSingleLine()
+        }
+        box.addView(ep); box.addView(key); box.addView(loc)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.cloud_dialog)
+            .setView(box)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                Cloud.save(this, Cloud.Config(
+                    ep.text.toString(), key.text.toString(),
+                    loc.text.toString().ifBlank { "zh-CN" }))
+                toast("已儲存")
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun cloudReady(): Cloud.Config? {
+        val cfg = Cloud.load(this)
+        if (cfg.endpoint.isBlank() || cfg.key.isBlank()) {
+            asrLog(getString(R.string.cloud_need_setup)); cloudSetup(); return null
+        }
+        return cfg
+    }
+
+    /** 文件的語言清單可能落後，直接用你的金鑰跟服務問一次 */
+    private fun cloudLocales() {
+        val cfg = cloudReady() ?: return
+        lifecycleScope.launch {
+            try {
+                val list = Cloud.listLocales(cfg) { l -> asrLog(l) }
+                if (list.isEmpty()) asrLog("查不到清單，看上面的錯誤訊息")
+                else {
+                    asrLog("服務回報支援 ${list.size} 種語言：")
+                    asrLog(list.joinToString("、"))
+                    val tw = list.filter { it.startsWith("zh") || it.contains("Hant", true) }
+                    asrLog(if (tw.isEmpty()) "→ 沒有任何中文語系" else "→ 中文相關：${tw.joinToString("、")}")
+                }
+            } catch (t: Throwable) {
+                asrLog("查詢失敗：${t.javaClass.simpleName} ${t.message ?: ""}")
+            }
+        }
+    }
+
+    private fun cloudRun() {
+        if (clipUris.isEmpty()) { toast(getString(R.string.asr_hint_noclip)); return }
+        val cfg = cloudReady() ?: return
+        val before = subs.size
+        b.cloudProgress.visibility = View.VISIBLE
+        b.btnCloud.isEnabled = false
+        lifecycleScope.launch {
+            try {
+                asrLog(getString(R.string.cloud_extracting))
+                val m4a = withContext(Dispatchers.IO) {
+                    val dir = getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)!!
+                    dir.mkdirs()
+                    val f = java.io.File(dir, "asr-audio.m4a")
+                    if (f.exists()) f.delete()
+                    AudioTrack.extract(this@SubtitleActivity, clipUris, f) { l -> asrLog(l) }
+                }
+                asrLog(getString(R.string.cloud_uploading))
+                val got = Cloud.transcribe(cfg, m4a) { l -> asrLog(l) }
+                if (got.isEmpty()) { asrLog("沒有取得任何字幕"); return@launch }
+                if (before > 0) {
+                    AlertDialog.Builder(this@SubtitleActivity)
+                        .setMessage(getString(R.string.asr_replace, before))
+                        .setPositiveButton(android.R.string.ok) { _, _ ->
+                            subs.clear(); subs.addAll(got); sortAndRefresh()
+                        }
+                        .setNegativeButton(android.R.string.cancel) { _, _ ->
+                            subs.addAll(got); sortAndRefresh()
+                        }.show()
+                } else { subs.addAll(got); sortAndRefresh() }
+                asrLog("完成，新增 ${got.size} 句")
+            } catch (t: Throwable) {
+                asrLog("雲端辨識失敗：${t.javaClass.simpleName}")
+                asrLog(t.message ?: "（沒有訊息）")
+            } finally {
+                b.cloudProgress.visibility = View.GONE
+                b.btnCloud.isEnabled = true
             }
         }
     }

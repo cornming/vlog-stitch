@@ -54,6 +54,18 @@
 注意：這個 API 規定音訊只能以實際速度餵入，所以 %1$s 的素材大約要跑 %1$s。過程中請讓 App 保持在畫面上，切走會被系統中斷。</string>
     <string name="asr_hint_basic">這台裝置不支援 Advanced 模式（只有 Pixel 10 與 Pixel 11 支援），會改用 Basic 模式，中文準確度較差。</string>
     <string name="asr_hint_noclip">還沒有選影片，回上一頁選好再回來。</string>
+    <string name="cloud_title">雲端辨識（Azure）</string>
+    <string name="cloud_hint">只把聲音上傳，影片留在手機。速度遠快於即時，而且服務端直接回傳時間碼，不需要我們自己推算。需要先設定金鑰。</string>
+    <string name="cloud_setup">設定</string>
+    <string name="cloud_locales">查語言</string>
+    <string name="cloud_run">雲端辨識</string>
+    <string name="cloud_need_setup">請先按「設定」填入 Azure 的端點與金鑰。</string>
+    <string name="cloud_dialog">Azure AI Speech 設定</string>
+    <string name="cloud_endpoint_hint">端點或區域，例如 southeastasia</string>
+    <string name="cloud_key_hint">金鑰 KEY 1</string>
+    <string name="cloud_locale_hint">語言，例如 zh-CN</string>
+    <string name="cloud_extracting">正在抽出聲音軌（不重新編碼）…</string>
+    <string name="cloud_uploading">上傳並辨識中，長音訊要等一下…</string>
     <string name="asr_check">檢查支援</string>
     <string name="asr_wav">聽音訊</string>
     <string name="asr_wav_doing">正在把送進辨識器的音訊存成 WAV…</string>
