@@ -56,10 +56,32 @@
         <TextView android:id="@+id/asrStatus"
             android:layout_width="match_parent" android:layout_height="wrap_content"
             style="@style/Label" android:paddingTop="6dp" />
-        <com.google.android.material.button.MaterialButton android:id="@+id/btnAsr"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="match_parent" android:layout_height="46dp"
-            android:layout_marginTop="8dp" android:text="@string/asr_start" />
+        <ScrollView android:id="@+id/asrLogScroll"
+            android:layout_width="match_parent" android:layout_height="150dp"
+            android:layout_marginTop="8dp" android:background="@color/ink"
+            android:padding="8dp" android:visibility="gone">
+            <TextView android:id="@+id/asrLog"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:fontFamily="monospace" android:textSize="10.5sp"
+                android:textColor="@color/dim" android:lineSpacingMultiplier="1.35"
+                android:textIsSelectable="true" />
+        </ScrollView>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginTop="8dp">
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnAsrCheck"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content" android:layout_height="46dp"
+                android:minWidth="0dp" android:textSize="13sp" android:text="@string/asr_check" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnAsrCopy"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content" android:layout_height="46dp"
+                android:minWidth="0dp" android:textSize="13sp" android:text="@string/copy_log" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnAsr"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp" android:layout_height="46dp"
+                android:layout_weight="1" android:layout_marginStart="6dp"
+                android:text="@string/asr_start" />
+        </LinearLayout>
     </LinearLayout>
 
     <TextView android:id="@+id/empty"

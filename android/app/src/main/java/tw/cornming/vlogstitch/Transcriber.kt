@@ -63,15 +63,30 @@ object Transcriber {
         log("裝置 ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
         log("模式 ${if (advanced) "Advanced（Gemini Nano）" else "Basic"}　語言 $locale")
 
-        val options: SpeechRecognizerOptions = speechRecognizerOptions {
-            this.locale = locale
-            preferredMode = if (advanced) SpeechRecognizerOptions.Mode.MODE_ADVANCED
-            else SpeechRecognizerOptions.Mode.MODE_BASIC
+        log("步驟 1：建立辨識器")
+        val recognizer: SpeechRecognizer = try {
+            val options: SpeechRecognizerOptions = speechRecognizerOptions {
+                this.locale = locale
+                preferredMode = if (advanced) SpeechRecognizerOptions.Mode.MODE_ADVANCED
+                else SpeechRecognizerOptions.Mode.MODE_BASIC
+            }
+            SpeechRecognition.getClient(options)
+        } catch (t: Throwable) {
+            log("建立辨識器失敗：${t.javaClass.name}")
+            log(t.message ?: "（沒有訊息）")
+            throw Failed("建立辨識器失敗：${t.javaClass.simpleName} ${t.message ?: ""}")
         }
-        val recognizer: SpeechRecognizer = SpeechRecognition.getClient(options)
 
         try {
-            when (val status = recognizer.checkStatus()) {
+            log("步驟 2：查詢模型狀態")
+            val status = try {
+                recognizer.checkStatus()
+            } catch (t: Throwable) {
+                log("查詢狀態失敗：${t.javaClass.name} ${t.message ?: ""}")
+                throw Failed("查詢狀態失敗：${t.javaClass.simpleName} ${t.message ?: ""}")
+            }
+            log("狀態碼 $status（AVAILABLE=${FeatureStatus.AVAILABLE} DOWNLOADABLE=${FeatureStatus.DOWNLOADABLE} DOWNLOADING=${FeatureStatus.DOWNLOADING} UNAVAILABLE=${FeatureStatus.UNAVAILABLE}）")
+            when (status) {
                 FeatureStatus.AVAILABLE -> log("模型已就緒")
                 FeatureStatus.DOWNLOADABLE -> {
                     log("需要下載模型…")
@@ -95,6 +110,7 @@ object Transcriber {
                 )
             }
 
+            log("步驟 3：建立音訊管線")
             val pipe = ParcelFileDescriptor.createPipe()
             val fed = AtomicLong(0)
             val queue = ArrayBlockingQueue<ByteArray>(48)
@@ -150,6 +166,7 @@ object Transcriber {
 
             val subs = ArrayList<Subtitle>()
             var lastEndMs = 0L
+            log("步驟 4：開始辨識，等待回應")
             val request = speechRecognizerRequest { audioSource = AudioSource.fromPfd(pipe[0]) }
 
             recognizer.startRecognition(request).collect { resp ->
@@ -168,7 +185,7 @@ object Transcriber {
                         }
                         onProgress(Progress(now, totalMs, subs.size))
                     }
-                    is SpeechRecognizerResponse.CompletedResponse -> log("辨識完成")
+                    is SpeechRecognizerResponse.CompletedResponse -> log("收到完成回應")
                     is SpeechRecognizerResponse.ErrorResponse -> {
                         log("辨識錯誤 ${resp.e.errorCode}：${resp.e.message}")
                         throw Failed(resp.e.message ?: "辨識失敗")
@@ -187,6 +204,39 @@ object Transcriber {
             try { recognizer.close() } catch (_: Exception) {}
         }
     }
+
+    /** 只建立辨識器並查狀態，完全不碰音訊。用來確認問題出在 API 還是我們的音訊管線。 */
+    suspend fun checkOnly(advanced: Boolean, locale: Locale, log: (String) -> Unit) =
+        withContext(Dispatchers.IO) {
+            log("裝置 ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+            log("Android ${android.os.Build.VERSION.RELEASE}（SDK ${android.os.Build.VERSION.SDK_INT}）")
+            log("Advanced 支援判定：${advancedSupported()}")
+            var r: SpeechRecognizer? = null
+            try {
+                val options: SpeechRecognizerOptions = speechRecognizerOptions {
+                    this.locale = locale
+                    preferredMode = if (advanced) SpeechRecognizerOptions.Mode.MODE_ADVANCED
+                    else SpeechRecognizerOptions.Mode.MODE_BASIC
+                }
+                log("建立辨識器（${if (advanced) "Advanced" else "Basic"} / $locale）…")
+                r = SpeechRecognition.getClient(options)
+                log("辨識器建立成功")
+                val s = r.checkStatus()
+                log("狀態碼 $s")
+                log(when (s) {
+                    FeatureStatus.AVAILABLE -> "→ 可以直接用"
+                    FeatureStatus.DOWNLOADABLE -> "→ 需要先下載模型"
+                    FeatureStatus.DOWNLOADING -> "→ 模型下載中，稍後再試"
+                    else -> "→ 這台裝置或這個模式不支援"
+                })
+            } catch (t: Throwable) {
+                log("失敗：${t.javaClass.name}")
+                log(t.message ?: "（沒有訊息）")
+                t.stackTrace.take(4).forEach { log("  at $it") }
+            } finally {
+                try { r?.close() } catch (_: Throwable) {}
+            }
+        }
 
     private fun fedMs(fed: AtomicLong) = fed.get() * 1000 / AudioPcm.BYTES_PER_SEC
 }

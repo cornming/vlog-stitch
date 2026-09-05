@@ -95,6 +95,8 @@ class SubtitleActivity : AppCompatActivity() {
         b.btnDelete.setOnClickListener { deleteSelected() }
 
         b.btnAsr.setOnClickListener { if (asrJob != null) stopAsr() else startAsr() }
+        b.btnAsrCheck.setOnClickListener { checkAsr() }
+        b.btnAsrCopy.setOnClickListener { copyAsrLog() }
         setupAsrBox()
         refresh()
     }
@@ -109,12 +111,49 @@ class SubtitleActivity : AppCompatActivity() {
         b.btnAsr.isEnabled = clipUris.isNotEmpty()
     }
 
+    private fun asrLog(line: String) {
+        runOnUiThread {
+            b.asrLogScroll.visibility = View.VISIBLE
+            b.asrLog.append(line + "\n")
+            b.asrLogScroll.post { b.asrLogScroll.fullScroll(View.FOCUS_DOWN) }
+        }
+    }
+
+    private fun copyAsrLog() {
+        val t = b.asrLog.text.toString()
+        if (t.isBlank()) { toast(getString(R.string.log_empty)); return }
+        getSystemService(android.content.ClipboardManager::class.java)
+            .setPrimaryClip(android.content.ClipData.newPlainText("asr log", t))
+        toast(getString(R.string.log_copied))
+    }
+
+    /** 只測 API，不碰音訊，用來確認問題出在哪一端 */
+    private fun checkAsr() {
+        b.asrLog.text = ""
+        lifecycleScope.launch {
+            try {
+                Transcriber.checkOnly(
+                    Transcriber.advancedSupported(),
+                    Locale.forLanguageTag("cmn-Hant-TW")
+                ) { line -> asrLog(line) }
+                if (Transcriber.advancedSupported()) {
+                    asrLog("──── 再測 Basic 模式 ────")
+                    Transcriber.checkOnly(false, Locale.forLanguageTag("cmn-Hant-TW")) { l -> asrLog(l) }
+                }
+            } catch (t: Throwable) {
+                asrLog("檢查本身出錯：${t.javaClass.name} ${t.message ?: ""}")
+            }
+        }
+    }
+
     private fun startAsr() {
         asrCancel.set(false)
         b.btnAsr.setText(R.string.asr_stop)
         b.asrProgress.visibility = View.VISIBLE
         b.asrProgress.progress = 0
         b.asrStatus.text = ""
+        b.asrLog.text = ""
+        asrLog("== 開始 ==")
         val before = subs.size
         asrJob = lifecycleScope.launch {
             try {
@@ -124,7 +163,7 @@ class SubtitleActivity : AppCompatActivity() {
                     totalMs = totalMs,
                     locale = Locale.forLanguageTag("cmn-Hant-TW"),
                     advanced = Transcriber.advancedSupported(),
-                    log = { line -> runOnUiThread { b.asrStatus.text = line } },
+                    log = { line -> asrLog(line) },
                     onProgress = { p ->
                         runOnUiThread {
                             if (totalMs > 0)
@@ -154,10 +193,15 @@ class SubtitleActivity : AppCompatActivity() {
                     subs.addAll(got); sortAndRefresh()
                     b.asrStatus.text = getString(R.string.asr_done, got.size)
                 }
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
+                // 一定要接 Throwable：AICore 沒裝好時丟的是 Error，不是 Exception
+                asrLog("!! ${t.javaClass.name}")
+                asrLog(t.message ?: "（沒有訊息）")
+                t.stackTrace.take(6).forEach { asrLog("  at $it") }
                 b.asrStatus.text = getString(R.string.asr_failed,
-                    "${e.javaClass.simpleName} ${e.message ?: ""}")
+                    "${t.javaClass.simpleName} ${t.message ?: ""}")
             } finally {
+                asrLog("== 結束 ==")
                 asrJob = null
                 b.btnAsr.setText(R.string.asr_start)
                 b.asrProgress.visibility = View.GONE
