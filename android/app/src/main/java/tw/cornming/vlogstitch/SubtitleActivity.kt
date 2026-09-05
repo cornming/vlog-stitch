@@ -42,6 +42,7 @@ class SubtitleActivity : AppCompatActivity() {
     private var totalMs = 0L
     private var clipUris = ArrayList<Uri>()
     private var asrJob: Job? = null
+    private var lastResponse: String? = null
     private val asrCancel = AtomicBoolean(false)
     private var pendingAsrAction: (() -> Unit)? = null
 
@@ -125,6 +126,7 @@ class SubtitleActivity : AppCompatActivity() {
         b.btnSelectNone.setOnClickListener { setAll(false) }
         b.btnDelete.setOnClickListener { deleteSelected() }
 
+        if (subs.isEmpty()) toggleGen()
         b.btnAsr.setOnClickListener {
             if (asrJob != null) stopAsr() else { b.asrLog.text = ""; withMic { startAsr() } }
         }
@@ -134,6 +136,8 @@ class SubtitleActivity : AppCompatActivity() {
         b.btnCloudSetup.setOnClickListener { cloudSetup() }
         b.btnCloudLocales.setOnClickListener { b.asrLog.text = ""; cloudLocales() }
         b.btnCloud.setOnClickListener { b.asrLog.text = ""; cloudRun() }
+        b.genToggle.setOnClickListener { toggleGen() }
+        b.btnCloudJson.setOnClickListener { saveResponse() }
         setupAsrBox()
         refresh()
     }
@@ -228,6 +232,13 @@ class SubtitleActivity : AppCompatActivity() {
         }
     }
 
+    /** 產生字幕的工具區塊很佔空間，收起來字幕清單才看得到 */
+    private fun toggleGen() {
+        val show = b.genBox.visibility != View.VISIBLE
+        b.genBox.visibility = if (show) View.VISIBLE else View.GONE
+        b.genToggle.setText(if (show) R.string.gen_collapse else R.string.gen_expand)
+    }
+
     // ---------------- 雲端辨識 ----------------
 
     private fun cloudSetup() {
@@ -257,6 +268,25 @@ class SubtitleActivity : AppCompatActivity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    /** 把原始回應存下來分享，結構有疑問時直接看它最快 */
+    private fun saveResponse() {
+        val r = lastResponse
+        if (r.isNullOrBlank()) { toast("還沒有回應"); return }
+        try {
+            val dir = getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)!!
+            dir.mkdirs()
+            val f = java.io.File(dir, "azure-response.json")
+            f.writeText(r)
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", f)
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }, getString(R.string.cloud_save_json)))
+        } catch (t: Throwable) { toast("存檔失敗：${t.message}") }
     }
 
     private fun cloudReady(): Cloud.Config? {
@@ -302,8 +332,14 @@ class SubtitleActivity : AppCompatActivity() {
                     if (f.exists()) f.delete()
                     AudioTrack.extract(this@SubtitleActivity, clipUris, f) { l -> asrLog(l) }
                 }
+                lastResponse = null
+                val mb = m4a.length() / 1048576
+                if (m4a.length() > Cloud.MAX_BYTES) {
+                    asrLog(getString(R.string.cloud_too_big, mb)); return@launch
+                }
+                asrLog(getString(R.string.cloud_size, mb, Media.fmtDuration(totalMs)))
                 asrLog(getString(R.string.cloud_uploading))
-                val got = Cloud.transcribe(cfg, m4a) { l -> asrLog(l) }
+                val got = Cloud.transcribe(cfg, m4a, { r -> lastResponse = r }) { l -> asrLog(l) }
                 if (got.isEmpty()) { asrLog("沒有取得任何字幕"); return@launch }
                 if (before > 0) {
                     AlertDialog.Builder(this@SubtitleActivity)
@@ -316,6 +352,8 @@ class SubtitleActivity : AppCompatActivity() {
                         }.show()
                 } else { subs.addAll(got); sortAndRefresh() }
                 asrLog("完成，新增 ${got.size} 句")
+                if (b.genBox.visibility == View.VISIBLE) toggleGen()  // 收起工具，讓清單露出來
+                b.list.scrollToPosition(0)
             } catch (t: Throwable) {
                 asrLog("雲端辨識失敗：${t.javaClass.simpleName}")
                 asrLog(t.message ?: "（沒有訊息）")

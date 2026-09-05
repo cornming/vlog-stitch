@@ -37,6 +37,15 @@
         </LinearLayout>
     </LinearLayout>
 
+    <TextView android:id="@+id/genToggle"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:padding="14dp" android:textColor="@color/accent" android:textSize="14sp"
+        android:text="@string/gen_expand" />
+
+    <LinearLayout android:id="@+id/genBox"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:visibility="gone">
+
     <LinearLayout android:id="@+id/cloudBox"
         android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="vertical" android:layout_marginStart="14dp"
@@ -60,6 +69,10 @@
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content" android:layout_height="46dp"
                 android:minWidth="0dp" android:textSize="13sp" android:text="@string/cloud_setup" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnCloudJson"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content" android:layout_height="46dp"
+                android:minWidth="0dp" android:textSize="13sp" android:text="@string/cloud_save_json" />
             <com.google.android.material.button.MaterialButton android:id="@+id/btnCloudLocales"
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content" android:layout_height="46dp"
@@ -120,6 +133,8 @@
                 android:layout_weight="1" android:layout_marginStart="6dp"
                 android:text="@string/asr_start" />
         </LinearLayout>
+    </LinearLayout>
+
     </LinearLayout>
 
     <TextView android:id="@+id/empty"

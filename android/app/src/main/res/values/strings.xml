@@ -54,6 +54,11 @@
 注意：這個 API 規定音訊只能以實際速度餵入，所以 %1$s 的素材大約要跑 %1$s。過程中請讓 App 保持在畫面上，切走會被系統中斷。</string>
     <string name="asr_hint_basic">這台裝置不支援 Advanced 模式（只有 Pixel 10 與 Pixel 11 支援），會改用 Basic 模式，中文準確度較差。</string>
     <string name="asr_hint_noclip">還沒有選影片，回上一頁選好再回來。</string>
+    <string name="gen_expand">▾ 自動產生字幕</string>
+    <string name="gen_collapse">▴ 收起</string>
+    <string name="cloud_too_big">音訊 %1$d MB，超過服務端 200 MB 的單檔上限，要分批處理。</string>
+    <string name="cloud_size">音訊 %1$d MB，%2$s，在服務端限制內</string>
+    <string name="cloud_save_json">存回應</string>
     <string name="cloud_title">雲端辨識（Azure）</string>
     <string name="cloud_hint">只把聲音上傳，影片留在手機。速度遠快於即時，而且服務端直接回傳時間碼，不需要我們自己推算。需要先設定金鑰。</string>
     <string name="cloud_setup">設定</string>

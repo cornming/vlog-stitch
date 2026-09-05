@@ -79,6 +79,7 @@ object Cloud {
     suspend fun transcribe(
         cfg: Config,
         audio: File,
+        onRaw: (String) -> Unit = {},
         log: (String) -> Unit
     ): List<Subtitle> = withContext(Dispatchers.IO) {
         val url = "${host(cfg.endpoint)}/speechtotext/transcriptions:transcribe?api-version=$API_VERSION"
@@ -115,35 +116,116 @@ object Cloud {
             val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
                 ?.bufferedReader()?.use { it.readText() }.orEmpty()
             log("HTTP $code，回應 ${body.length} 字元")
+            onRaw(body)
             if (code !in 200..299) throw Exception("HTTP $code：${body.take(300)}")
             parse(body, log)
         } finally { conn.disconnect() }
     }
 
-    /** 回應裡的 phrases 帶 offsetMilliseconds / durationMilliseconds，時間碼直接用 */
+    /** 一行字幕的目標長度。中文字幕一行大約十幾個字比較好讀。 */
+    private const val LINE_CHARS = 18
+
+    /**
+     * 服務回傳的 phrases 顆粒很粗，一句可能長達數十秒，那是段落不是字幕。
+     * 有 words 就用逐字時間切成適合閱讀的短句；沒有就依標點切、再按字數分配時間。
+     */
     private fun parse(body: String, log: (String) -> Unit): List<Subtitle> {
         val root = JSONObject(body)
+        log("回應欄位：" + root.keys().asSequence().joinToString("、"))
         val phrases = root.optJSONArray("phrases")
         val out = ArrayList<Subtitle>()
+
         if (phrases != null && phrases.length() > 0) {
+            log("原始段落 ${phrases.length()} 段")
+            val first = phrases.optJSONObject(0)
+            if (first != null) log("段落欄位：" + first.keys().asSequence().joinToString("、"))
+            var usedWords = 0
             for (i in 0 until phrases.length()) {
                 val p = phrases.getJSONObject(i)
                 val text = p.optString("text").trim()
                 if (text.isEmpty()) continue
                 val start = p.optLong("offsetMilliseconds", 0L)
                 val dur = p.optLong("durationMilliseconds", 1500L)
-                out.add(Subtitle(start, start + maxOf(dur, 400L), text))
+                val words = p.optJSONArray("words")
+                if (words != null && words.length() > 0) {
+                    usedWords++
+                    out.addAll(byWords(words))
+                } else {
+                    out.addAll(byPunctuation(text, start, dur))
+                }
             }
-            log("取得 ${out.size} 句，含時間碼")
+            log("切成 ${out.size} 句" + if (usedWords > 0) "（$usedWords 段有逐字時間）" else "（依標點切分）")
         } else {
             val combined = root.optJSONArray("combinedPhrases")
             val text = if (combined != null && combined.length() > 0)
                 combined.getJSONObject(0).optString("text") else ""
             if (text.isNotBlank()) {
-                out.add(Subtitle(0, root.optLong("durationMilliseconds", 5000L), text.trim()))
-                log("只拿到整段文字，沒有分句時間碼")
+                out.addAll(byPunctuation(text.trim(), 0,
+                    root.optLong("durationMilliseconds", 5000L)))
+                log("只有整段文字，依標點切成 ${out.size} 句")
             } else log("回應裡沒有可用的內容")
         }
         return out
     }
+
+    /** 用逐字時間累積，遇到標點或長度到了就斷句 */
+    private fun byWords(words: JSONArray): List<Subtitle> {
+        val out = ArrayList<Subtitle>()
+        val sb = StringBuilder()
+        var start = -1L
+        var end = 0L
+        for (i in 0 until words.length()) {
+            val w = words.getJSONObject(i)
+            val t = w.optString("text")
+            if (t.isBlank()) continue
+            val ws = w.optLong("offsetMilliseconds", end)
+            val we = ws + w.optLong("durationMilliseconds", 200L)
+            if (start < 0) start = ws
+            if (sb.isNotEmpty() && needsSpace(sb.last(), t.first())) sb.append(' ')
+            sb.append(t)
+            end = we
+            val hardBreak = t.last() in "。！？!?；;"
+            if (hardBreak || sb.length >= LINE_CHARS) {
+                out.add(Subtitle(start, maxOf(end, start + 400), sb.toString().trim()))
+                sb.setLength(0); start = -1
+            }
+        }
+        if (sb.isNotEmpty()) out.add(Subtitle(maxOf(start, 0), maxOf(end, start + 400), sb.toString().trim()))
+        return out
+    }
+
+    private fun needsSpace(a: Char, b: Char): Boolean {
+        fun latin(c: Char) = c.isLetterOrDigit() && c.code < 0x2E80
+        return latin(a) && latin(b)
+    }
+
+    /** 沒有逐字時間時的退路：依標點切，時間按字數比例分配 */
+    private fun byPunctuation(text: String, start: Long, dur: Long): List<Subtitle> {
+        val parts = ArrayList<String>()
+        val sb = StringBuilder()
+        for (c in text) {
+            sb.append(c)
+            if (c in "。！？!?；;，,、" && sb.length >= LINE_CHARS / 2) {
+                parts.add(sb.toString().trim()); sb.setLength(0)
+            } else if (sb.length >= LINE_CHARS * 2) {
+                parts.add(sb.toString().trim()); sb.setLength(0)
+            }
+        }
+        if (sb.isNotBlank()) parts.add(sb.toString().trim())
+        val clean = parts.filter { it.isNotBlank() }
+        if (clean.isEmpty()) return emptyList()
+        val total = clean.sumOf { it.length }.coerceAtLeast(1)
+        val out = ArrayList<Subtitle>()
+        var t = start
+        for (p in clean) {
+            val d = maxOf(400L, dur * p.length / total)
+            out.add(Subtitle(t, t + d, p))
+            t += d
+        }
+        return out
+    }
+
+    /** 服務端的單檔上限，超過要先切開 */
+    const val MAX_BYTES = 200L * 1024 * 1024
+    const val MAX_MS = 2L * 60 * 60 * 1000
 }
