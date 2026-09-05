@@ -55,6 +55,8 @@
     <string name="asr_hint_basic">這台裝置不支援 Advanced 模式（只有 Pixel 10 與 Pixel 11 支援），會改用 Basic 模式，中文準確度較差。</string>
     <string name="asr_hint_noclip">還沒有選影片，回上一頁選好再回來。</string>
     <string name="asr_check">檢查支援</string>
+    <string name="asr_wav">聽音訊</string>
+    <string name="asr_wav_doing">正在把送進辨識器的音訊存成 WAV…</string>
     <string name="asr_start">開始辨識</string>
     <string name="asr_stop">停止</string>
     <string name="asr_running">辨識中　%1$s / %2$s　已產生 %3$d 句</string>

@@ -1,6 +1,7 @@
 package tw.cornming.vlogstitch
 
 import android.content.Context
+import android.media.AudioFormat
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -41,15 +42,37 @@ object AudioPcm {
             if (track < 0 || format == null) { log("這一段沒有聲音軌"); return }
             ex.selectTrack(track)
 
-            val srcRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-            val srcCh = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-            log("解碼聲音 ${format.getString(MediaFormat.KEY_MIME)} ${srcRate}Hz ${srcCh}ch → ${RATE}Hz 1ch")
+            log("容器宣告 ${format.getString(MediaFormat.KEY_MIME)} " +
+                "${format.getInteger(MediaFormat.KEY_SAMPLE_RATE)}Hz " +
+                "${format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)}ch")
 
             codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
+            // 明確要求 16-bit。不指定的話有些裝置會吐 float，用 16-bit 去讀就是整片雜訊。
+            format.setInteger(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
             codec.configure(format, null, null, 0)
             codec.start()
 
-            val resampler = Resampler(srcRate, RATE)
+            // 實際輸出格式可能跟容器宣告的不同（HE-AAC 會倍頻），一律以輸出為準
+            var srcRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+            var srcCh = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            var pcmFloat = false
+            var resampler = Resampler(srcRate, RATE)
+            var formatKnown = false
+
+            fun adoptOutputFormat(f: MediaFormat) {
+                val r = if (f.containsKey(MediaFormat.KEY_SAMPLE_RATE))
+                    f.getInteger(MediaFormat.KEY_SAMPLE_RATE) else srcRate
+                val c = if (f.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
+                    f.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else srcCh
+                val enc = if (f.containsKey(MediaFormat.KEY_PCM_ENCODING))
+                    f.getInteger(MediaFormat.KEY_PCM_ENCODING) else AudioFormat.ENCODING_PCM_16BIT
+                srcRate = r; srcCh = c
+                pcmFloat = enc == AudioFormat.ENCODING_PCM_FLOAT
+                resampler = Resampler(srcRate, RATE)
+                formatKnown = true
+                log("解碼器輸出 ${srcRate}Hz ${srcCh}ch " +
+                    (if (pcmFloat) "float32" else "int16") + " → ${RATE}Hz 1ch int16")
+            }
             val info = MediaCodec.BufferInfo()
             var sawInputEnd = false
             var sawOutputEnd = false
@@ -74,10 +97,12 @@ object AudioPcm {
                 when {
                     outIdx >= 0 -> {
                         if (info.size > 0) {
+                            if (!formatKnown) adoptOutputFormat(codec.outputFormat)
                             val out = codec.getOutputBuffer(outIdx)!!
                             out.position(info.offset)
                             out.limit(info.offset + info.size)
-                            val mono = toMono(out, srcCh)
+                            val mono = if (pcmFloat) floatToMono(out, srcCh)
+                                       else toMono(out, srcCh)
                             val res = resampler.process(mono)
                             if (res.isNotEmpty() && !onChunk(toBytes(res))) {
                                 codec.releaseOutputBuffer(outIdx, false)
@@ -87,6 +112,8 @@ object AudioPcm {
                         codec.releaseOutputBuffer(outIdx, false)
                         if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) sawOutputEnd = true
                     }
+                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED ->
+                        adoptOutputFormat(codec.outputFormat)
                     outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> if (sawInputEnd) { /* 等 */ }
                 }
             }
@@ -114,6 +141,41 @@ object AudioPcm {
             out[i] = (sum / channels).toShort()
         }
         return out
+    }
+
+    /** 有些解碼器輸出 float32，範圍 -1..1，要自己轉回 16-bit */
+    private fun floatToMono(buf: ByteBuffer, channels: Int): ShortArray {
+        val fb = buf.order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+        val total = fb.remaining()
+        val tmp = FloatArray(total); fb.get(tmp)
+        val ch = maxOf(1, channels)
+        val frames = total / ch
+        val out = ShortArray(frames)
+        for (i in 0 until frames) {
+            var sum = 0f
+            for (c in 0 until ch) sum += tmp[i * ch + c]
+            val v = (sum / ch * 32767f).toInt().coerceIn(-32768, 32767)
+            out[i] = v.toShort()
+        }
+        return out
+    }
+
+    /** 存成 WAV，讓人可以直接播來確認送進辨識器的到底是什麼 */
+    fun writeWav(pcm: java.io.File, wav: java.io.File) {
+        val dataLen = pcm.length().toInt()
+        java.io.FileOutputStream(wav).use { os ->
+            fun le32(v: Int) = byteArrayOf(
+                (v and 0xFF).toByte(), ((v shr 8) and 0xFF).toByte(),
+                ((v shr 16) and 0xFF).toByte(), ((v shr 24) and 0xFF).toByte())
+            fun le16(v: Int) = byteArrayOf((v and 0xFF).toByte(), ((v shr 8) and 0xFF).toByte())
+            os.write("RIFF".toByteArray()); os.write(le32(36 + dataLen))
+            os.write("WAVE".toByteArray()); os.write("fmt ".toByteArray())
+            os.write(le32(16)); os.write(le16(1)); os.write(le16(1))
+            os.write(le32(RATE)); os.write(le32(RATE * 2))
+            os.write(le16(2)); os.write(le16(16))
+            os.write("data".toByteArray()); os.write(le32(dataLen))
+            pcm.inputStream().use { it.copyTo(os) }
+        }
     }
 
     private fun toBytes(s: ShortArray): ByteArray {

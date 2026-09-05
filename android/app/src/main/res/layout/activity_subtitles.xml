@@ -72,6 +72,10 @@
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content" android:layout_height="46dp"
                 android:minWidth="0dp" android:textSize="13sp" android:text="@string/asr_check" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnAsrWav"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content" android:layout_height="46dp"
+                android:minWidth="0dp" android:textSize="13sp" android:text="@string/asr_wav" />
             <com.google.android.material.button.MaterialButton android:id="@+id/btnAsrCopy"
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content" android:layout_height="46dp"

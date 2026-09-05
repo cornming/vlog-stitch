@@ -21,7 +21,9 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -128,6 +130,7 @@ class SubtitleActivity : AppCompatActivity() {
         }
         b.btnAsrCheck.setOnClickListener { b.asrLog.text = ""; withMic { checkAsr() } }
         b.btnAsrCopy.setOnClickListener { copyAsrLog() }
+        b.btnAsrWav.setOnClickListener { b.asrLog.text = ""; dumpWav() }
         setupAsrBox()
         refresh()
     }
@@ -173,6 +176,51 @@ class SubtitleActivity : AppCompatActivity() {
                 }
             } catch (t: Throwable) {
                 asrLog("檢查本身出錯：${t.javaClass.name} ${t.message ?: ""}")
+            }
+        }
+    }
+
+    /**
+     * 把實際會送進辨識器的那份音訊存成 WAV 並分享出去。
+     * 播起來如果是雜訊或變調，就證明問題在解碼管線而不是模型。
+     */
+    private fun dumpWav() {
+        if (clipUris.isEmpty()) { toast(getString(R.string.asr_hint_noclip)); return }
+        asrLog(getString(R.string.asr_wav_doing))
+        lifecycleScope.launch {
+            try {
+                val wav = withContext(Dispatchers.IO) {
+                    val dir = getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)!!
+                    dir.mkdirs()
+                    val raw = java.io.File(dir, "asr-input.pcm")
+                    val out = java.io.File(dir, "asr-input.wav")
+                    java.io.FileOutputStream(raw).use { os ->
+                        // 只取前兩分鐘就夠判斷，檔案也不會太大
+                        var written = 0L
+                        val limit = AudioPcm.BYTES_PER_SEC.toLong() * 120
+                        for (u in clipUris) {
+                            if (written >= limit) break
+                            AudioPcm.decodeTo16kMono(this@SubtitleActivity, u,
+                                { l -> asrLog(l) }) { chunk ->
+                                os.write(chunk); written += chunk.size
+                                written < limit
+                            }
+                        }
+                    }
+                    AudioPcm.writeWav(raw, out)
+                    raw.delete()
+                    out
+                }
+                asrLog("已產生 ${wav.name}，大小 ${wav.length() / 1024} KB")
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    this@SubtitleActivity, "$packageName.fileprovider", wav)
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = "audio/wav"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }, getString(R.string.asr_wav)))
+            } catch (t: Throwable) {
+                asrLog("匯出音訊失敗：${t.javaClass.simpleName} ${t.message ?: ""}")
             }
         }
     }
