@@ -245,21 +245,38 @@ input[type=password]{width:100%;background:var(--bg);color:var(--text);border:1p
       <p class="muted" id="draftSrcHint" style="margin:8px 0 0"></p>
 
       <div id="aiBox" hidden>
-        <label class="field">Anthropic API key</label>
-        <input type="password" id="aiKey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" oninput="ai.keyChanged()">
+        <label class="field">用哪一家的金鑰</label>
+        <div class="pill" id="aiProvPills"></div>
+
+        <div id="aiAzureBox" hidden>
+          <label class="field">Foundry 端點</label>
+          <input type="text" id="azEndpoint" placeholder="https://你的資源名稱.services.ai.azure.com" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" oninput="ai.fieldChanged()">
+          <label class="field">部署名稱</label>
+          <input type="text" id="azDeployment" placeholder="你在 Foundry 上替模型取的名字" autocomplete="off" autocapitalize="off" spellcheck="false" oninput="ai.fieldChanged()">
+        </div>
+
+        <label class="field" id="aiKeyLabel">API key</label>
+        <input type="password" id="aiKey" autocomplete="off" spellcheck="false" oninput="ai.keyChanged()">
         <label class="check"><input type="checkbox" id="aiRemember" onchange="ai.keyChanged()"> 記在這台裝置的瀏覽器裡</label>
-        <label class="field">模型</label>
-        <select id="aiModel" onchange="ai.modelChanged()"></select>
+
+        <div id="aiGeminiBox" hidden>
+          <label class="field">模型</label>
+          <div class="row" style="gap:8px">
+            <input type="text" id="geminiModel" list="geminiModelList" class="grow" autocomplete="off" autocapitalize="off" spellcheck="false" oninput="ai.fieldChanged()">
+            <button class="btn small" style="flex:none" onclick="ai.geminiModels()">查可用模型</button>
+          </div>
+          <datalist id="geminiModelList"></datalist>
+        </div>
+        <div id="aiAnthropicBox" hidden>
+          <label class="field">模型</label>
+          <select id="aiModel" onchange="ai.modelChanged()"></select>
+        </div>
+
         <label class="field">這支影片在拍什麼（選填，給 AI 當背景）</label>
         <input type="text" id="aiHint" placeholder="例如：跟家人去宜蘭兩天一夜" maxlength="200">
         <details class="note" style="background:transparent">
           <summary>會傳出去什麼？</summary>
-          <ul>
-            <li>每張照片會先縮成最長邊 768 像素的 JPEG 再傳，影片只傳一格畫面。原始檔不會離開裝置。</li>
-            <li>畫面是直接從這個瀏覽器傳到 Anthropic 的 Claude API，用的是你自己的金鑰與額度，中間沒有其他伺服器。</li>
-            <li>金鑰預設只留在這一頁的記憶體，關掉就沒了。勾選「記在這台裝置」才會存進瀏覽器，共用的裝置不要勾。</li>
-            <li>組織開了零資料保留（ZDR）的話，API 不接受瀏覽器直接呼叫，會回 401。</li>
-          </ul>
+          <ul id="aiNote"></ul>
         </details>
       </div>
 
@@ -510,7 +527,7 @@ self.onmessage=async e=>{
    ============================================================ */
 
 /* 每次改動都要更新，診斷記錄會印出來，用來確認手機拿到的是不是新版 */
-const APP_VERSION='v10 (2026-11-14)　照片素材、照片動態／轉場／色調、配樂混音、字幕草稿（離線／AI）、轉檔前確認字幕';
+const APP_VERSION='v11 (2026-11-14)　AI 看圖寫字幕可選 Gemini、Azure Foundry 或 Anthropic 的金鑰';
 
 const FONT='system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
 const FPS=30;
@@ -552,7 +569,10 @@ const state={
   bgmVol:.5,origVol:1,duck:true,
   /* 字幕草稿 */
   draftSrc:'offline',  /* offline／ai */
-  aiModel:'claude-opus-5-5',
+  aiProvider:'gemini', /* AI 看圖用哪一家：gemini／azure／anthropic */
+  geminiModel:'gemini-3.8-flash',
+  azureEndpoint:'',azureDeployment:'',
+  aiModel:'claude-opus-5-5',   /* Anthropic 用的模型 */
   subsOk:true          /* 字幕在上次確認之後有沒有再變動過 */
 };
 
@@ -949,7 +969,7 @@ const subs={
    字幕草稿：替每一段素材先寫一句
    ------------------------------------------------------------
    離線：只知道拍攝時間，所以寫的是日期與時段，當作等你改寫的底稿。
-   AI ：把縮小的畫面傳給 Claude，照畫面內容寫。
+   AI ：把縮小的畫面傳給使用者選的那一家（Gemini、Azure Foundry 或 Anthropic），照畫面內容寫。
    兩種都只是草稿，轉檔前一定會先讓使用者逐句確認。
    ============================================================ */
 const WEEK='日一二三四五六';
@@ -1022,12 +1042,12 @@ const draft={
     try{
       let map;
       if(state.draftSrc==='ai'){
-        map=await ai.captions(list,(done,all)=>draft.say('AI 看圖寫字幕中　'+done+' / '+all+' 張'),()=>draft.stop);
+        map=await ai.captions(list,(done,all)=>draft.say(AI_NAME[state.aiProvider]+' 看圖寫字幕中　'+done+' / '+all+' 張'),()=>draft.stop);
         if(draft.stop){draft.say('已停止，字幕沒有變動。','warn');return false;}
       }else map=draft.offline();
       const n=draft.apply(map);
       draft.say(state.draftSrc==='ai'
-        ?'AI 寫好 '+n+' 句草稿，轉檔前會讓你逐句確認。'
+        ?AI_NAME[state.aiProvider]+' 寫好 '+n+' 句草稿，轉檔前會讓你逐句確認。'
         :'已依拍攝時間寫好 '+n+' 句草稿，內容只有日期和時段，記得改成你想說的話。','ok');
       return true;
     }catch(e){
@@ -1040,11 +1060,26 @@ const draft={
 };
 
 /* ============================================================
-   AI 看圖寫字幕（Claude API，使用者自己的金鑰）
+   AI 看圖寫字幕（使用者自己的金鑰，三家供應商擇一）
    ------------------------------------------------------------
-   官方 SDK 從 CDN 動態載入，跟 mediabunny、transformers.js 一樣不進版本庫。
-   請求直接從瀏覽器送到 api.anthropic.com，中間沒有自己的伺服器。
+   gemini     Google 的 Gemini API，原生的 generateContent
+   azure      Azure Foundry 的 OpenAI 相容端點（/openai/v1/chat/completions），
+              model 填的是部署名稱
+   anthropic  Claude API，官方 SDK 從 CDN 動態載入
+   三家都是從瀏覽器直接呼叫，中間沒有自己的伺服器。
+   提示詞、分批方式、要回的資料格式是共用的；各家只負責把同一份內容
+   包成自己的請求格式，再把回應拆回 {編號: 字幕}。
    ============================================================ */
+const AI_PROVIDERS=[['gemini','Gemini'],['azure','Azure Foundry'],['anthropic','Anthropic']];
+const AI_NAME={gemini:'Gemini',azure:'Azure Foundry',anthropic:'Anthropic'};
+const AI_BATCH=20;       /* 一次請求最多送幾張。Claude 超過 20 張會套用更嚴格的單張尺寸上限，三家統一用這個數字 */
+const AI_SIDE=768;       /* 傳出去的畫面最長邊 */
+const AI_TIMEOUT=180000; /* Gemini 與 Azure 等一次回應最久等多久（毫秒） */
+
+const GEMINI_API='https://generativelanguage.googleapis.com/v1beta';
+/* 模型欄位的建議清單。可以自己打別的，或按「查可用模型」向 API 要這把金鑰實際能用的 */
+const GEMINI_MODELS=['gemini-3.8-flash','gemini-flash-latest','gemini-3.6-flash','gemini-2.5-flash','gemini-2.5-pro'];
+
 const ANTHROPIC_CDN=[
   'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1/+esm',
   'https://esm.sh/@anthropic-ai/sdk@1'
@@ -1056,8 +1091,6 @@ const AI_MODELS=[
 ];
 /* 這兩個模型被安全分類器擋下時，可以請伺服器自動改用備援模型重跑同一個請求 */
 const AI_FALLBACK=new Set(['claude-opus-5-5','claude-sonnet-5-5']);
-const AI_BATCH=20;   /* 單次請求超過 20 張圖，API 會套用更嚴格的單張尺寸上限，所以分批送 */
-const AI_SIDE=768;   /* 傳出去的畫面最長邊。一張約 (寬/28)×(高/28) 個 token */
 
 const AI_SYSTEM=`你在幫一位台灣的使用者替日常 vlog 寫字幕。使用者會給你一組依時間順序排列的畫面，每一張前面有編號、類型和拍攝時間。請替每一張寫一句會直接疊在畫面上的字幕。
 
@@ -1070,6 +1103,7 @@ const AI_SYSTEM=`你在幫一位台灣的使用者替日常 vlog 寫字幕。使
 - 整組字幕要像同一支影片：前後有連貫、句型有變化，第一句可以帶出日期或時段，最後一句可以收尾。
 - 純文字，不要 hashtag、表情符號、引號，句尾不加句號。`;
 
+/* 要模型回的格式：{captions:[{index,text}]}。Claude 與 Azure 用標準的 JSON Schema */
 const AI_SCHEMA={
   type:'object',
   properties:{
@@ -1089,41 +1123,116 @@ const AI_SCHEMA={
   required:['captions'],
   additionalProperties:false
 };
+/* Gemini 的 responseSchema 是同一個形狀，型別名稱用大寫 */
+const GEMINI_SCHEMA={
+  type:'OBJECT',
+  properties:{
+    captions:{
+      type:'ARRAY',
+      items:{
+        type:'OBJECT',
+        properties:{
+          index:{type:'INTEGER',description:'畫面的編號'},
+          text:{type:'STRING',description:'這張畫面的字幕'}
+        },
+        required:['index','text']
+      }
+    }
+  },
+  required:['captions']
+};
 
 const ai={
-  lib:null,keyMem:'',
+  lib:null,
+  keys:{gemini:'',azure:'',anthropic:''},   /* 各家的金鑰，預設只留在記憶體 */
 
-  async load(){
-    if(ai.lib)return ai.lib;
-    let last=null;
-    for(const url of ANTHROPIC_CDN){
-      try{
-        const m=await import(url);
-        const A=m.default||m.Anthropic;
-        if(typeof A==='function'){ai.lib=A;return A;}
-      }catch(e){last=e;}
+  /* ---------- 設定 ---------- */
+  key(){return (ai.keys[state.aiProvider]||'').trim();},
+  /* 目前選的供應商還缺什麼設定；都齊了回空字串 */
+  missing(){
+    const p=state.aiProvider;
+    if(p==='azure'){
+      if(!state.azureEndpoint.trim())return '還沒填 Azure Foundry 的端點';
+      if(!state.azureDeployment.trim())return '還沒填 Azure Foundry 的部署名稱';
     }
-    throw new Error('載入不到 Claude SDK，檢查一下網路：'+((last&&last.message)||''));
+    if(p==='gemini'&&!state.geminiModel.trim())return '還沒填 Gemini 的模型名稱';
+    if(!ai.key())return '還沒填 '+AI_NAME[p]+' 的金鑰';
+    return '';
   },
-  key(){return (ai.keyMem||'').trim();},
-  keyChanged(){
-    ai.keyMem=$('aiKey').value;
+  remember(){
     try{
-      if($('aiRemember').checked&&ai.key())localStorage.setItem('vlog-stitch-ai-key',ai.key());
-      else localStorage.removeItem('vlog-stitch-ai-key');
+      const keep={};
+      for(const k in ai.keys)if(ai.keys[k].trim())keep[k]=ai.keys[k].trim();
+      if($('aiRemember').checked&&Object.keys(keep).length)
+        localStorage.setItem('vlog-stitch-ai-keys',JSON.stringify(keep));
+      else localStorage.removeItem('vlog-stitch-ai-keys');
     }catch(e){}
+  },
+  keyChanged(){
+    ai.keys[state.aiProvider]=$('aiKey').value;
+    ai.remember();ui.syncDraft();
+  },
+  /* 端點、部署名稱、模型名稱不是機密，跟其他設定一起存 */
+  fieldChanged(){
+    state.azureEndpoint=$('azEndpoint').value;
+    state.azureDeployment=$('azDeployment').value;
+    state.geminiModel=$('geminiModel').value;
+    ui.saveStyle();ui.syncDraft();
   },
   modelChanged(){state.aiModel=$('aiModel').value;ui.saveStyle();},
+  setProvider(p){
+    state.aiProvider=p;
+    $('aiKey').value=ai.keys[p]||'';
+    ui.saveStyle();ui.syncDraft();
+  },
   restore(){
+    let saved=false;
     try{
-      const k=localStorage.getItem('vlog-stitch-ai-key')||'';
-      if(k){ai.keyMem=k;$('aiKey').value=k;$('aiRemember').checked=true;}
+      const all=JSON.parse(localStorage.getItem('vlog-stitch-ai-keys')||'{}');
+      for(const k in ai.keys)if(typeof all[k]==='string'&&all[k]){ai.keys[k]=all[k];saved=true;}
+      /* v10 只有 Anthropic 一家，金鑰存在舊的位置，搬過來 */
+      const old=localStorage.getItem('vlog-stitch-ai-key');
+      if(old){
+        if(!ai.keys.anthropic)ai.keys.anthropic=old;
+        saved=true;
+        localStorage.removeItem('vlog-stitch-ai-key');
+      }
     }catch(e){}
+    $('aiRemember').checked=saved;
+    if(saved)ai.remember();
+    if(!AI_PROVIDERS.some(p=>p[0]===state.aiProvider))state.aiProvider='gemini';
+    $('aiKey').value=ai.keys[state.aiProvider]||'';
+    $('azEndpoint').value=state.azureEndpoint;
+    $('azDeployment').value=state.azureDeployment;
+    $('geminiModel').value=state.geminiModel;
+    ai.fillGeminiList(GEMINI_MODELS);
     $('aiModel').innerHTML=AI_MODELS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
     if(!AI_MODELS.some(m=>m[0]===state.aiModel))state.aiModel=AI_MODELS[0][0];
     $('aiModel').value=state.aiModel;
   },
+  fillGeminiList(names){
+    $('geminiModelList').innerHTML=names.map(n=>`<option value="${esc(n)}"></option>`).join('');
+  },
+  /* 問 Gemini 這把金鑰實際能用哪些模型，填進建議清單 */
+  async geminiModels(){
+    const key=(ai.keys.gemini||'').trim();
+    if(!key){ui.toast('先填 Gemini API key');return;}
+    try{
+      const r=await fetch(GEMINI_API+'/models?pageSize=200',{headers:{'x-goog-api-key':key}});
+      const d=await r.json();
+      if(!r.ok)throw new Error((d.error&&d.error.message)||('HTTP '+r.status));
+      const names=(d.models||[])
+        .filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent'))
+        .map(m=>String(m.name||'').replace(/^models\//,''))
+        .filter(n=>/^gemini-/.test(n)&&/flash|pro/.test(n)&&!/tts|image|audio|live|customtools/.test(n))
+        .reverse();
+      if(!names.length)throw new Error('清單裡沒有可以看圖寫字的模型');
+      ai.fillGeminiList(names);
+      ui.toast('這把金鑰可以用 '+names.length+' 個模型，點模型欄位就能選');
+    }catch(e){ui.toast('查不到模型清單：'+e.message);}
+  },
 
+  /* ---------- 三家共用 ---------- */
   /* 一段素材 → 要給模型看的那張圖（JPEG 的 base64），只傳縮小後的畫面 */
   async image(c){
     let cv=null;
@@ -1144,28 +1253,140 @@ const ai={
     }
     return s;
   },
-
-  /* 組出一次請求。items：[{n,label,data}]，done：前面幾批已經寫好的 [{n,text}] */
-  request(items,done,hint,total){
-    const content=[];
+  /* 一次提問的內容，文字和圖片交錯：[{text}|{image}]。
+     items：[{n,label,data}]，done：前面幾批已經寫好的 [{n,text}] */
+  prompt(items,done,hint,total){
+    const out=[];
     let head='這支 vlog 一共有 '+total+' 張畫面。';
     if(hint)head+='\n使用者的補充說明：'+hint;
     if(done.length)head+='\n\n前面已經寫好的字幕（讓你接續語氣，不用重寫）：\n'
       +done.map(d=>'第 '+d.n+' 張：'+d.text).join('\n');
-    content.push({type:'text',text:head});
-    for(const it of items){
-      content.push({type:'text',text:it.label});
-      content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data:it.data}});
-    }
-    content.push({type:'text',text:'請替第 '+items[0].n+' 到第 '+items[items.length-1].n
+    out.push({text:head});
+    for(const it of items){out.push({text:it.label});out.push({image:it.data});}
+    out.push({text:'請替第 '+items[0].n+' 到第 '+items[items.length-1].n
       +' 張各寫一句字幕，index 填上面的編號。'});
+    return out;
+  },
+  /* 模型回的 JSON 字串 → Map(編號 → 字幕) */
+  pick(text){
+    let data;
+    try{data=JSON.parse(text);}catch(e){throw new Error('模型回傳的格式讀不懂');}
+    const out=new Map();
+    for(const c of ((data&&data.captions)||[])){
+      if(Number.isInteger(c.index)&&typeof c.text==='string')out.set(c.index,c.text.trim());
+    }
+    return out;
+  },
+  /* Gemini 與 Azure 用的 POST，把各種失敗翻成看得懂的話 */
+  async post(url,headers,body,who){
+    const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),AI_TIMEOUT);
+    let r;
+    try{
+      r=await fetch(url,{method:'POST',signal:ctl.signal,
+        headers:Object.assign({'Content-Type':'application/json'},headers),body:JSON.stringify(body)});
+    }catch(e){
+      if(e.name==='AbortError')throw new Error(who+' 太久沒有回應，已經中止');
+      throw new Error('連不上 '+who+'，檢查一下網路'+(who===AI_NAME.azure?'和端點網址':''));
+    }finally{clearTimeout(timer);}
+    let data=null;
+    try{data=await r.json();}catch(e){}
+    if(r.ok&&data)return data;
+    const err=(data&&data.error)||{},msg=String(err.message||err.code||'').slice(0,300);
+    const azure=who===AI_NAME.azure;
+    if(r.status===401||r.status===403||/API key not valid/i.test(msg))
+      throw new Error(who+' 不接受這把金鑰（'+r.status+'）'+(azure?'，確認金鑰和端點是同一個資源的':''));
+    if(r.status===404)
+      throw new Error(azure?'找不到這個部署（404）。這一欄要填你在 Foundry 上取的部署名稱，不是模型名稱'
+                           :'找不到這個模型（404），確認模型名稱，或按「查可用模型」');
+    /* 429 可能是太頻繁，也可能是額度或花費上限用完，供應商的說明要原樣帶出來才知道是哪一種 */
+    if(r.status===429)throw new Error(who+' 回報請求太頻繁或額度用完了（429）'+(msg?'：'+msg.slice(0,180):'，等一下再試'));
+    if(r.status===400)throw new Error(who+' 不接受這個請求（400）：'+msg);
+    throw new Error(who+' 回報錯誤（'+r.status+'）'+(msg?'：'+msg:''));
+  },
+
+  /* ---------- Gemini ---------- */
+  geminiUrl(){
+    const m=state.geminiModel.trim().replace(/^models\//,'');
+    return GEMINI_API+'/models/'+encodeURIComponent(m)+':generateContent';
+  },
+  geminiRequest(items,done,hint,total){
+    return {
+      system_instruction:{parts:[{text:AI_SYSTEM}]},
+      contents:[{role:'user',parts:ai.prompt(items,done,hint,total).map(p=>
+        p.image?{inline_data:{mime_type:'image/jpeg',data:p.image}}:{text:p.text})}],
+      generationConfig:{responseMimeType:'application/json',responseSchema:GEMINI_SCHEMA}
+    };
+  },
+  geminiParse(res){
+    const fb=res.promptFeedback;
+    if(fb&&fb.blockReason)throw new Error('Gemini 擋下了這批畫面（'+fb.blockReason+'）');
+    const c=(res.candidates||[])[0];
+    if(!c)throw new Error('Gemini 沒有回傳內容');
+    if(c.finishReason==='MAX_TOKENS')throw new Error('模型的回覆被截斷了，請減少素材數量再試一次');
+    const text=((c.content&&c.content.parts)||[])
+      .filter(p=>!p.thought&&typeof p.text==='string').map(p=>p.text).join('');
+    if(!text)throw new Error('Gemini 沒有寫出字幕'+(c.finishReason?'（'+c.finishReason+'）':''));
+    return ai.pick(text);
+  },
+
+  /* ---------- Azure Foundry（OpenAI 相容） ---------- */
+  /* 使用者貼的可能是資源端點、專案端點、已經帶 /openai/v1 的網址，或只有資源名稱，
+     一律整理成對話補全的完整網址 */
+  azureUrl(raw){
+    let s=String(raw||'').trim();
+    if(!s)throw new Error('還沒填 Azure Foundry 的端點');
+    if(!/^[a-z]+:\/\//i.test(s))s='https://'+(s.includes('.')?s:s+'.services.ai.azure.com');
+    let u;
+    try{u=new URL(s);}catch(e){throw new Error('Azure Foundry 的端點不是正確的網址');}
+    if(u.protocol!=='https:')throw new Error('Azure Foundry 的端點要用 https');
+    return u.origin+'/openai/v1/chat/completions';
+  },
+  azureRequest(items,done,hint,total){
+    return {
+      model:state.azureDeployment.trim(),
+      messages:[
+        {role:'system',content:AI_SYSTEM},
+        {role:'user',content:ai.prompt(items,done,hint,total).map(p=>
+          p.image?{type:'image_url',image_url:{url:'data:image/jpeg;base64,'+p.image}}
+                 :{type:'text',text:p.text})}
+      ],
+      response_format:{type:'json_schema',json_schema:{name:'captions',strict:true,schema:AI_SCHEMA}}
+    };
+  },
+  azureParse(res){
+    const c=(res.choices||[])[0];
+    if(!c)throw new Error('模型沒有回傳內容');
+    if(c.finish_reason==='content_filter')throw new Error('Azure 的內容篩選擋下了這批畫面');
+    if(c.finish_reason==='length')throw new Error('模型的回覆被截斷了，請減少素材數量再試一次');
+    const m=c.message||{};
+    if(m.refusal)throw new Error('模型拒絕處理這批畫面（'+String(m.refusal).slice(0,120)+'）');
+    if(typeof m.content!=='string'||!m.content)throw new Error('模型沒有回傳文字');
+    return ai.pick(m.content);
+  },
+
+  /* ---------- Anthropic ---------- */
+  async load(){
+    if(ai.lib)return ai.lib;
+    let last=null;
+    for(const url of ANTHROPIC_CDN){
+      try{
+        const m=await import(url);
+        const A=m.default||m.Anthropic;
+        if(typeof A==='function'){ai.lib=A;return A;}
+      }catch(e){last=e;}
+    }
+    throw new Error('載入不到 Claude SDK，檢查一下網路：'+((last&&last.message)||''));
+  },
+  request(items,done,hint,total){
     const req={
       model:state.aiModel,
       max_tokens:16000,
       thinking:{type:'adaptive'},
       output_config:{effort:'medium',format:{type:'json_schema',schema:AI_SCHEMA}},
       system:AI_SYSTEM,
-      messages:[{role:'user',content}]
+      messages:[{role:'user',content:ai.prompt(items,done,hint,total).map(p=>
+        p.image?{type:'image',source:{type:'base64',media_type:'image/jpeg',data:p.image}}
+               :{type:'text',text:p.text})}]
     };
     if(AI_FALLBACK.has(state.aiModel)){
       req.betas=['server-side-fallback-2026-07-01'];
@@ -1173,7 +1394,6 @@ const ai={
     }
     return req;
   },
-  /* 從回應取出 {編號: 文字} */
   parse(res){
     if(res.stop_reason==='refusal'){
       const why=res.stop_details&&res.stop_details.explanation;
@@ -1182,13 +1402,7 @@ const ai={
     if(res.stop_reason==='max_tokens')throw new Error('模型的回覆被截斷了，請減少素材數量再試一次');
     const tb=(res.content||[]).find(b=>b.type==='text');
     if(!tb)throw new Error('模型沒有回傳文字');
-    let data;
-    try{data=JSON.parse(tb.text);}catch(e){throw new Error('模型回傳的格式讀不懂');}
-    const out=new Map();
-    for(const c of (data.captions||[])){
-      if(Number.isInteger(c.index)&&typeof c.text==='string')out.set(c.index,c.text.trim());
-    }
-    return out;
+    return ai.pick(tb.text);
   },
   explain(A,e){
     if(e instanceof A.AuthenticationError)
@@ -1202,11 +1416,34 @@ const ai={
     return e.message||String(e);
   },
 
+  /* ---------- 送出 ---------- */
+  /* 依目前的供應商，回傳「問一批」的函式：(items,done,hint,total) → Map(編號 → 字幕) */
+  async asker(){
+    const p=state.aiProvider,key=ai.key();
+    if(p==='gemini'){
+      const url=ai.geminiUrl();
+      return async(...a)=>ai.geminiParse(await ai.post(url,{'x-goog-api-key':key},ai.geminiRequest(...a),AI_NAME.gemini));
+    }
+    if(p==='azure'){
+      const url=ai.azureUrl(state.azureEndpoint);
+      return async(...a)=>ai.azureParse(await ai.post(url,{'api-key':key},ai.azureRequest(...a),AI_NAME.azure));
+    }
+    const A=await ai.load();
+    const client=new A({apiKey:key,dangerouslyAllowBrowser:true});
+    return async(...a)=>{
+      const req=ai.request(...a);
+      let res;
+      try{
+        res=req.betas?await client.beta.messages.create(req):await client.messages.create(req);
+      }catch(e){throw new Error(ai.explain(A,e));}
+      return ai.parse(res);
+    };
+  },
   /* list：要寫字幕的片段。回傳 Map(片段 id → 文字)。 */
   async captions(list,onProgress,stopped){
-    if(!ai.key())throw new Error('還沒填 Anthropic API key（在「字幕」頁的字幕草稿裡）');
-    const A=await ai.load();
-    const client=new A({apiKey:ai.key(),dangerouslyAllowBrowser:true});
+    const miss=ai.missing();
+    if(miss)throw new Error(miss+'（在「字幕」頁的字幕草稿裡）');
+    const ask=await ai.asker();
     const hint=(($('aiHint')&&$('aiHint').value)||'').trim();
     const out=new Map(),done=[];
     for(let at=0;at<list.length;at+=AI_BATCH){
@@ -1218,12 +1455,7 @@ const ai={
       }
       if(onProgress)onProgress(at,list.length);
       if(!items.length)continue;
-      const req=ai.request(items,done,hint,list.length);
-      let res;
-      try{
-        res=req.betas?await client.beta.messages.create(req):await client.messages.create(req);
-      }catch(e){throw new Error(ai.explain(A,e));}
-      const got=ai.parse(res);
+      const got=await ask(items,done,hint,list.length);
       for(const it of items){
         const text=got.get(it.n)||'';
         out.set(it.c.id,text);
@@ -3221,13 +3453,39 @@ const ui={
     if(b){b.textContent=draft.busy?'停止':'產生字幕草稿';b.classList[draft.busy?'add':'remove']('danger');}
     const q=$('quickBtn');
     if(q){q.disabled=busy;q.textContent=busy?'處理中…':'產生草稿，確認字幕';}
-    const ai_=state.draftSrc==='ai';
+    const ai_=state.draftSrc==='ai',p=state.aiProvider;
     $('aiBox').hidden=!ai_;
+    $('aiAzureBox').hidden=p!=='azure';
+    $('aiGeminiBox').hidden=p!=='gemini';
+    $('aiAnthropicBox').hidden=p!=='anthropic';
+    $('aiKeyLabel').textContent={gemini:'Gemini API key',azure:'Foundry 資源的 API 金鑰',anthropic:'Anthropic API key'}[p];
+    $('aiKey').placeholder={gemini:'在 Google AI Studio 建立的金鑰',azure:'跟上面的端點同一個資源的金鑰',anthropic:'sk-ant-…'}[p];
+    $('aiNote').innerHTML=ui.aiNote(p);
     const hint=ai_
-      ?'把縮小的畫面傳給 Claude，照畫面內容寫字幕。要用你自己的 Anthropic API key。'
+      ?'把縮小的畫面傳給 '+AI_NAME[p]+'，照畫面內容寫字幕。要用你自己的金鑰。'
       :'不連網。只知道拍攝時間，所以草稿只有日期和時段，內容要自己改寫。';
     $('draftSrcHint').textContent=hint;
-    $('quickSrcHint').textContent=ai_&&!ai.key()?hint+'還沒填金鑰，請先到「字幕」頁填。':hint;
+    const miss=ai_?ai.missing():'';
+    $('quickSrcHint').textContent=miss?hint+miss+'，請先到「字幕」頁填。':hint;
+  },
+  /* 「會傳出去什麼？」的說明，跟著選的供應商變 */
+  aiNote(p){
+    const to={
+      gemini:'Google 的 Gemini API（generativelanguage.googleapis.com）',
+      azure:'你填的那個 Azure Foundry 端點',
+      anthropic:'Anthropic 的 Claude API（api.anthropic.com）'
+    }[p];
+    const extra={
+      gemini:'模型欄位可以自己改。按「查可用模型」會向 Gemini 問這把金鑰實際能用哪些模型。',
+      azure:'「部署名稱」是你在 Foundry 上替模型取的名字，不是模型本身的名稱。要選能看圖、支援結構化輸出的對話模型；這裡走的是 OpenAI 相容的 /openai/v1 端點。',
+      anthropic:'組織開了零資料保留（ZDR）的話，API 不接受瀏覽器直接呼叫，會回 401。'
+    }[p];
+    return [
+      '每張照片會先縮成最長邊 768 像素的 JPEG 再傳，影片只傳一格畫面。原始檔不會離開裝置。',
+      '畫面是直接從這個瀏覽器傳到'+to+'，用的是你自己的金鑰與額度，中間沒有其他伺服器。',
+      '金鑰預設只留在這一頁的記憶體，關掉就沒了。勾選「記在這台裝置」才會存進瀏覽器，共用的裝置不要勾。',
+      extra
+    ].map(t=>'<li>'+esc(t)+'</li>').join('');
   },
 
   clipMeta(c){
@@ -3445,7 +3703,8 @@ const ui={
       k:state.styleKey,p:state.subPos,m:state.sizeMul,r:state.res,o:state.ori,f:state.fit,x:state.mode,q:state.fps,
       pd:state.photoDur,mo:state.motion,tr:state.trans,lk:state.look,
       bg:state.bgm,bv:state.bgmVol,ov:state.origVol,dk:state.duck,
-      ds:state.draftSrc,am:state.aiModel,t:fx.touched
+      ds:state.draftSrc,am:state.aiModel,t:fx.touched,
+      ap:state.aiProvider,gm:state.geminiModel,ae:state.azureEndpoint,ad:state.azureDeployment
     }));}catch(e){}
   },
   loadStyle(){
@@ -3470,6 +3729,10 @@ const ui={
       if(typeof s.dk==='boolean')state.duck=s.dk;
       if(s.ds==='ai'||s.ds==='offline')state.draftSrc=s.ds;
       if(s.am)state.aiModel=s.am;
+      if(AI_PROVIDERS.some(x=>x[0]===s.ap))state.aiProvider=s.ap;
+      if(typeof s.gm==='string'&&s.gm.trim())state.geminiModel=s.gm;
+      if(typeof s.ae==='string')state.azureEndpoint=s.ae;
+      if(typeof s.ad==='string')state.azureDeployment=s.ad;
       if(s.t&&typeof s.t==='object')fx.touched=s.t;
       if(s.bg==='file')delete fx.touched.bgm;
     }catch(e){}
@@ -3517,6 +3780,7 @@ const DRAFT_SRC=[['offline','離線（照拍攝時間）'],['ai','AI 看圖寫']
 const srcSet=v=>{state.draftSrc=v;ui.syncDraft();ui.saveStyle();};
 ui.pills('draftSrcPills',DRAFT_SRC,()=>state.draftSrc,srcSet);
 ui.pills('quickSrcPills',DRAFT_SRC,()=>state.draftSrc,srcSet);
+ui.pills('aiProvPills',AI_PROVIDERS,()=>state.aiProvider,v=>ai.setProvider(v));
 
 $('sizeRange').value=Math.round(state.sizeMul*100);
 $('sizeVal').textContent=Math.round(state.sizeMul*100)+'%';

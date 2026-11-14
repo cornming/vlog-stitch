@@ -4,7 +4,7 @@
 
 只想把幾段影片原封不動接起來也可以，那是它原本的用途，做法沒有變。
 
-單一個 `index.html`，沒有後端、沒有建置流程、沒有 npm 安裝。照片、影片和聲音全程留在手機裡，不會上傳到任何伺服器。唯一的例外是你自己開啟的「AI 看圖寫字幕」，那時縮小過的畫面會直接傳給 Anthropic 的 Claude API，細節寫在[限制](#幾個一定要知道的限制)裡。
+單一個 `index.html`，沒有後端、沒有建置流程、沒有 npm 安裝。照片、影片和聲音全程留在手機裡，不會上傳到任何伺服器。唯一的例外是你自己開啟的「AI 看圖寫字幕」，那時縮小過的畫面會直接傳給你選的那一家 AI（Gemini、Azure Foundry 或 Anthropic），細節寫在[限制](#幾個一定要知道的限制)裡。
 
 ---
 
@@ -59,7 +59,7 @@ python3 -m http.server 8080
 **字幕**
 - 字幕草稿：替每一張照片、每一段影片先寫一句。兩種寫法可以切換：
   - 離線：不連網，照拍攝時間寫出日期和時段（例如「11月14日 週六」「中午 12:31」），當成等你改寫的底稿
-  - AI 看圖：把縮小的畫面傳給 Claude，照畫面內容寫。要填你自己的 Anthropic API key
+  - AI 看圖：把縮小的畫面傳給 AI，照畫面內容寫。供應商三選一，填你自己的金鑰：Gemini（預設）、Azure Foundry（OpenAI 相容的模型部署）或 Anthropic
 - 自動聽打：影片裡有人講話時用。Whisper 模型直接在瀏覽器跑，支援中／英／日，跑在背景執行緒不卡畫面，可隨時停止
 - **轉檔前一定先確認**：字幕只要在上次確認之後動過（自動產生、聽打、匯入、手改都算），按下匯出就會先停在確認畫面，你按下確認才開始轉檔
 - 草稿和聽打的字幕會跟著素材走：素材換順序、改秒數、重新裁切，字幕的時間會自動重算
@@ -98,11 +98,21 @@ python3 -m http.server 8080
 **離線草稿只知道拍攝時間。** 不連網就看不懂畫面，所以離線草稿寫的是日期和時段，內容要自己改。想要照畫面寫，就用 AI 看圖。
 
 **AI 看圖寫字幕會把畫面傳出去。** 這是整個工具唯一會把素材送出裝置的功能，而且要你自己選了「AI 看圖寫」、填了金鑰才會動：
-- 每張照片先縮成最長邊 768 像素的 JPEG，影片只取一格畫面，原始檔不會傳。請求從你的瀏覽器直接送到 `api.anthropic.com`，中間沒有其他伺服器。
-- 用的是你自己的 Anthropic API key 和額度。一張圖的輸入量大約是 ⌈寬÷28⌉×⌈高÷28⌉ 個 token，768×576 的畫面約 588 個；一次請求最多送 20 張，超過會分批。
-- 金鑰預設只留在這一頁的記憶體，關掉分頁就沒了。勾選「記在這台裝置」才會存進瀏覽器的 localStorage，共用的裝置不要勾。
-- 組織開了零資料保留（ZDR）時，API 不接受從瀏覽器直接呼叫，會回 401。
-- 預設模型是 Claude Opus 5.5，可以改成比較省的 Sonnet 5.5 或 Haiku 5.5。Opus 和 Sonnet 的請求帶了伺服器端的拒絕備援（`fallbacks`），被安全分類器擋下時會自動換模型重跑。
+- 每張照片先縮成最長邊 768 像素的 JPEG，影片只取一格畫面，原始檔不會傳。請求從你的瀏覽器直接送到你選的那一家，中間沒有其他伺服器。
+- 用的是你自己的金鑰和額度。一次請求最多送 20 張，超過會分批。
+- 金鑰預設只留在這一頁的記憶體，關掉分頁就沒了。勾選「記在這台裝置」才會存進瀏覽器的 localStorage，共用的裝置不要勾。三家的金鑰各存各的，切換供應商不會互相蓋掉。
+
+三家要填的東西不一樣：
+
+| 供應商 | 要填什麼 | 畫面送到哪裡 |
+|---|---|---|
+| Gemini（預設） | Google AI Studio 的 API key、模型名稱（預設 `gemini-3.8-flash`，可以自己改，或按「查可用模型」列出這把金鑰能用的） | `generativelanguage.googleapis.com` |
+| Azure Foundry | 資源端點、API 金鑰、部署名稱 | 你填的端點，走 OpenAI 相容的 `/openai/v1/chat/completions` |
+| Anthropic | API key、模型（預設 Claude Opus 5.5，可改 Sonnet 5.5 或 Haiku 5.5） | `api.anthropic.com` |
+
+- **Azure Foundry 的「部署名稱」是你在 Foundry 上替模型取的名字，不是模型本身的名稱**，而且要是能看圖、支援結構化輸出的對話模型。端點可以直接貼 Foundry 給的網址（資源端點、專案端點、已經帶 `/openai/v1` 的都可以），程式會自己整理。
+- Anthropic：組織開了零資料保留（ZDR）時，API 不接受從瀏覽器直接呼叫，會回 401。Opus 和 Sonnet 的請求帶了伺服器端的拒絕備援（`fallbacks`），被安全分類器擋下時會自動換模型重跑。Claude 一張圖的輸入量大約是 ⌈寬÷28⌉×⌈高÷28⌉ 個 token，768×576 的畫面約 588 個。
+- 出錯時會把原因講清楚：金鑰不對、找不到模型或部署、額度用完（會附上供應商自己的說明）、被內容篩選擋下，都不會當成空字幕默默吞掉。
 
 **AI 寫的字幕也只是草稿。** 模型看得到畫面，看不到你當下在想什麼，也可能看錯。所以不管草稿是哪一種寫法，轉檔前都會先停在確認畫面。
 
@@ -141,7 +151,7 @@ state              單一狀態物件：clips[]、subs[]、樣式、效果與輸
 ├─ photo           照片：解碼、轉正、縮圖、讀 EXIF 拍攝時間、匯出用的工作圖
 ├─ clips           素材管理：照片與影片的加入、探測 metadata、排序、裁切、秒數
 ├─ subs            字幕資料：新增、勾選、刪除、SRT 匯入匯出、跟著素材重算時間
-├─ draft / ai      字幕草稿：離線照拍攝時間寫，或用 Claude 看圖寫
+├─ draft / ai      字幕草稿：離線照拍攝時間寫，或用 AI 看圖寫（Gemini／Azure Foundry／Anthropic）
 ├─ fx              畫面效果：照片動態、轉場、色調、模糊填滿
 ├─ synth / bgm     內建配樂的合成、配樂的音量曲線與混音
 ├─ engine          即時預覽與 MediaRecorder 退路
@@ -187,7 +197,15 @@ state              單一狀態物件：clips[]、subs[]、樣式、效果與輸
 
 **AI 看圖寫字幕**
 
-`ai.captions()` 用官方的 `@anthropic-ai/sdk`，跟其他程式庫一樣從 CDN 動態載入，以 `dangerouslyAllowBrowser` 讓瀏覽器直接呼叫 API。每段素材縮成一張 JPEG，連同編號、類型和拍攝時間排進同一則訊息，用結構化輸出（`output_config.format` 的 JSON schema）要回 `{編號, 字幕}` 的清單，不用自己從文字裡撈。素材超過 20 張會分批送，後面的批次會帶著前面已經寫好的字幕，語氣才接得上。模型拒絕或回覆被截斷時直接報錯，不會當成空字幕默默吞掉。
+三家供應商共用同一套流程，只有「怎麼包請求、怎麼拆回應」不一樣：
+
+- 共用的部分：`ai.image()` 把每段素材縮成一張 JPEG；`ai.prompt()` 把編號、類型、拍攝時間和圖片排成一串文字與圖片交錯的內容；`ai.captions()` 每 20 張分一批，後面的批次會帶著前面已經寫好的字幕，語氣才接得上；`ai.pick()` 把模型回的 JSON 拆成 `{編號: 字幕}`。
+- 三家都用結構化輸出要回同一個形狀 `{captions:[{index,text}]}`，不用自己從文字裡撈。
+- Gemini：直接 `fetch` 原生的 `generateContent`，金鑰放在 `x-goog-api-key` 標頭，系統提示放 `system_instruction`，圖片用 `inline_data`，格式用 `generationConfig.responseSchema`。
+- Azure Foundry：直接 `fetch` OpenAI 相容的 `/openai/v1/chat/completions`，金鑰放在 `api-key` 標頭，`model` 填部署名稱，圖片用 data URL 的 `image_url`，格式用 `response_format` 的嚴格 JSON schema。
+- Anthropic：用官方的 `@anthropic-ai/sdk`，從 CDN 動態載入，以 `dangerouslyAllowBrowser` 讓瀏覽器直接呼叫，格式用 `output_config.format`。
+
+模型拒絕、被內容篩選擋下或回覆被截斷時直接報錯，不會當成空字幕默默吞掉。
 
 **xport：兩條快速路徑**
 
@@ -262,6 +280,8 @@ cd test && npm install playwright && npx playwright install chromium
 node browser.js
 ```
 
+AI 看圖寫字幕的三家供應商，平常是攔下請求檢查內容、再回假的回應。有設 `GEMINI_API_KEY`，或 `AZURE_OPENAI_ENDPOINT`＋`AZURE_AI_KEY`（＋`AZURE_CHAT_DEPLOYMENT`）這些環境變數時，最後會再用真的金鑰實測一次，會用到一點額度。
+
 ## 之後可以做的
 
 - [ ] 在手機上實機驗證照片流程（Android Chrome、iOS Safari），沒問題再把同一套做進 Android 原生版
@@ -281,4 +301,4 @@ node browser.js
 
 - [mediabunny](https://github.com/Vanilagy/mediabunny)（MPL-2.0）— 影片讀寫與轉換
 - [transformers.js](https://github.com/huggingface/transformers.js)（Apache-2.0）— Whisper 自動聽打
-- [@anthropic-ai/sdk](https://github.com/anthropics/anthropic-sdk-typescript)（Apache-2.0）— AI 看圖寫字幕，只有選了這個功能才會載入
+- [@anthropic-ai/sdk](https://github.com/anthropics/anthropic-sdk-typescript)（Apache-2.0）— AI 看圖寫字幕選 Anthropic 時才會載入。Gemini 和 Azure Foundry 是直接呼叫它們的 REST API，不需要額外的函式庫
