@@ -1,8 +1,9 @@
 #!/bin/bash
 # 把 index.html 裡真正的程式抽出來，接上 Node 版 mediabunny，用真影片跑一遍
 set -e
+set -o pipefail
 cd "$(dirname "$0")"
-[ -f clip1.mp4 ] || ./make-fixtures.sh
+{ [ -f clip1.mp4 ] && [ -f p_red.jpg ] && [ -f b_walk.webm ]; } || ./make-fixtures.sh
 python3 -c "
 import re
 s=open('../index.html',encoding='utf-8').read()

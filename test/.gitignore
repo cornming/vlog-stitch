@@ -3,3 +3,9 @@ app.js
 runner.js
 *.mp4
 package-lock.json
+*.jpg
+*.png
+*.webm
+*.mp3
+*.heic
+shots/

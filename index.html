@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#101318">
-<title>接片室 — 手機影片合併工具</title>
+<title>接片室 — 把照片和影片剪成 vlog</title>
 <style>
 :root{
   --bg:#101318;
@@ -22,6 +22,7 @@
   font-synthesis-weight:none;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
 html,body{margin:0;padding:0}
 body{
   background:var(--bg);
@@ -124,6 +125,44 @@ details.note ul{padding-left:18px;margin:8px 0 0}
 #logBox{margin:0;max-height:44vh;overflow:auto;background:var(--bg);border:1px solid var(--line);
   border-radius:9px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
   font-size:11px;line-height:1.55;color:var(--dim);white-space:pre-wrap;word-break:break-word}
+/* ---------- 縮圖、狀態標籤、提示條 ---------- */
+.thumb{width:44px;height:44px;flex:none;border-radius:8px;position:relative;overflow:hidden;
+  background:var(--surface2) center/cover no-repeat}
+.thumb .n{position:absolute;left:0;top:0;min-width:18px;height:18px;padding:0 4px;border-radius:0 0 7px 0;
+  background:rgba(16,19,24,.8);color:var(--text);font-size:11px;font-weight:700;display:grid;place-items:center;
+  font-variant-numeric:tabular-nums}
+.thumb.sm{width:36px;height:36px;border-radius:7px}
+.thumb.lg{width:66px;height:66px;border-radius:9px}
+.chip{display:inline-flex;align-items:center;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;
+  border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+.chip.ok{color:var(--ok);border-color:#285a44}
+.chip.wait{color:var(--accent);border-color:#5a4416}
+.banner{border:1px solid #5a4416;background:#231a08;color:#f3d28b;border-radius:10px;padding:10px 12px;
+  font-size:13px;line-height:1.6;margin-bottom:10px}
+.banner[hidden]{display:none}
+.banner .btn{margin-top:8px}
+.check{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--text);margin-top:12px}
+.check input{width:20px;height:20px;accent-color:var(--accent);flex:none}
+input[type=password]{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);
+  border-radius:9px;padding:9px 10px;font:inherit;font-size:14px}
+.toolrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.sub.off .txt,.rv.off textarea{opacity:.45}
+
+/* ---------- 字幕確認（轉檔前的最後一關） ---------- */
+.sheet{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
+.sheet[hidden]{display:none}
+.sheet-head{padding:14px 14px 11px;border-bottom:1px solid var(--line)}
+.sheet-head h2{margin:0;font-size:18px;font-weight:800}
+.sheet-head p{margin:5px 0 0}
+.sheet-body{flex:1;overflow:auto;-webkit-overflow-scrolling:touch}
+.sheet-body .wrap{padding-top:2px;padding-bottom:16px}
+.sheet-foot{border-top:1px solid var(--line);background:rgba(16,19,24,.96);
+  padding:10px 14px calc(10px + var(--safe-b))}
+.sheet-foot .wrap{padding:0;display:flex;gap:8px}
+.rv{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--line);align-items:flex-start}
+.rv:last-child{border-bottom:0}
+.rv .t{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;margin-bottom:4px}
+.rv textarea{min-height:44px;font-size:15px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -132,34 +171,64 @@ details.note ul{padding-left:18px;margin:8px 0 0}
 <div class="wrap">
   <header>
     <div class="brand">
-      <h1>接片室</h1><span>在手機上把幾段影片接成一支</span>
+      <h1>接片室</h1><span>把照片和影片剪成一支 vlog</span>
     </div>
     <div class="strip">
       <div class="strip-head"><span>成品長度</span><b id="totalLen">0:00</b></div>
-      <div class="track" id="track"><div class="empty-track">還沒有影片</div></div>
+      <div class="track" id="track"><div class="empty-track">還沒有素材</div></div>
       <div class="subline" id="subline"></div>
     </div>
   </header>
 
   <nav role="tablist">
-    <button role="tab" id="tab-clips" aria-selected="true" onclick="ui.tab('clips')">影片</button>
+    <button role="tab" id="tab-clips" aria-selected="true" onclick="ui.tab('clips')">素材</button>
     <button role="tab" id="tab-subs" aria-selected="false" onclick="ui.tab('subs')">字幕</button>
+    <button role="tab" id="tab-fx" aria-selected="false" onclick="ui.tab('fx')">效果</button>
     <button role="tab" id="tab-export" aria-selected="false" onclick="ui.tab('export')">匯出</button>
   </nav>
 
-  <!-- ============ 影片 ============ -->
+  <!-- ============ 素材 ============ -->
   <section id="panel-clips">
-    <input type="file" id="filePick" accept="video/*" multiple class="hidden-input">
+    <input type="file" id="filePick" accept="image/*,video/*" multiple class="hidden-input">
+
+    <div class="card" id="quickCard" hidden>
+      <div class="row" style="margin-bottom:4px">
+        <b class="grow" style="font-size:15px">快速成片</b>
+      </div>
+      <p class="muted" style="margin:4px 0 2px">自動寫好字幕草稿，套上照片動態、轉場和配樂。字幕會先列出來讓你逐句確認，你按下確認之後才開始轉檔。</p>
+      <label class="field">字幕草稿怎麼寫</label>
+      <div class="pill" id="quickSrcPills"></div>
+      <p class="muted" id="quickSrcHint" style="margin:8px 0 0"></p>
+      <label class="check"><input type="checkbox" id="quickSort" checked> 先依拍攝時間排好順序</label>
+      <button class="btn primary block" id="quickBtn" style="margin-top:12px" onclick="quick.run()">產生草稿，確認字幕</button>
+      <div class="status" id="quickStatus"></div>
+    </div>
+
+    <div class="toolrow" id="clipTools" hidden>
+      <button class="btn small" onclick="clips.sortByTime(true)">依拍攝時間排序</button>
+      <div class="row" id="photoDurBox" style="gap:8px" hidden>
+        <span class="muted">照片每張</span>
+        <div class="pill" id="photoDurPills"></div>
+      </div>
+    </div>
+
     <div id="clipList"></div>
     <div class="card" id="clipEmpty">
-      <p class="muted" style="margin:2px 0 12px">選幾段手機拍的影片，由上到下就是接起來的順序。可以先裁掉每段的頭尾。</p>
-      <button class="btn primary block" onclick="ui.pick()">選擇影片</button>
+      <p class="muted" style="margin:2px 0 12px">選今天拍的照片或影片，由上到下就是成品的順序。照片預設每張顯示 3 秒，影片可以先裁掉頭尾。</p>
+      <button class="btn primary block" onclick="ui.pick()">選擇照片／影片</button>
     </div>
     <details class="note">
-      <summary>畫面比例不一樣的影片會怎樣？</summary>
+      <summary>畫面比例不一樣的素材會怎樣？</summary>
       <ul>
-        <li>成品用你在「匯出」頁選的比例，其他片段會依設定<b>留黑邊</b>或<b>裁切填滿</b>。</li>
-        <li>直式、橫式混著接會很明顯，建議同一支影片只用一種方向拍。</li>
+        <li>成品用你在「匯出」頁選的比例，其他素材會依設定<b>留黑邊</b>、<b>裁切填滿</b>或<b>模糊填滿</b>（用同一張畫面的模糊版墊在後面）。</li>
+        <li>直式、橫式混著放時，「模糊填滿」通常最順眼。</li>
+      </ul>
+    </details>
+    <details class="note">
+      <summary>照片打不開？</summary>
+      <ul>
+        <li>iPhone 的 HEIC 照片在 Android 的 Chrome 上解不開，先在相簿轉成 JPEG 再選。</li>
+        <li>從雲端相簿（Google 相簿、OneDrive）選的檔案要先下載到本機。</li>
       </ul>
     </details>
   </section>
@@ -168,10 +237,42 @@ details.note ul{padding-left:18px;margin:8px 0 0}
   <section id="panel-subs" hidden>
     <div class="card">
       <div class="row" style="margin-bottom:4px">
-        <b class="grow" style="font-size:15px">自動聽打</b>
+        <b class="grow" style="font-size:15px">字幕草稿</b>
+      </div>
+      <p class="muted" style="margin:4px 0 2px">替每一張照片、每一段影片先寫一句，之後再改。已經聽打過的影片不會被蓋掉。</p>
+      <label class="field">草稿怎麼寫</label>
+      <div class="pill" id="draftSrcPills"></div>
+      <p class="muted" id="draftSrcHint" style="margin:8px 0 0"></p>
+
+      <div id="aiBox" hidden>
+        <label class="field">Anthropic API key</label>
+        <input type="password" id="aiKey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" oninput="ai.keyChanged()">
+        <label class="check"><input type="checkbox" id="aiRemember" onchange="ai.keyChanged()"> 記在這台裝置的瀏覽器裡</label>
+        <label class="field">模型</label>
+        <select id="aiModel" onchange="ai.modelChanged()"></select>
+        <label class="field">這支影片在拍什麼（選填，給 AI 當背景）</label>
+        <input type="text" id="aiHint" placeholder="例如：跟家人去宜蘭兩天一夜" maxlength="200">
+        <details class="note" style="background:transparent">
+          <summary>會傳出去什麼？</summary>
+          <ul>
+            <li>每張照片會先縮成最長邊 768 像素的 JPEG 再傳，影片只傳一格畫面。原始檔不會離開裝置。</li>
+            <li>畫面是直接從這個瀏覽器傳到 Anthropic 的 Claude API，用的是你自己的金鑰與額度，中間沒有其他伺服器。</li>
+            <li>金鑰預設只留在這一頁的記憶體，關掉就沒了。勾選「記在這台裝置」才會存進瀏覽器，共用的裝置不要勾。</li>
+            <li>組織開了零資料保留（ZDR）的話，API 不接受瀏覽器直接呼叫，會回 401。</li>
+          </ul>
+        </details>
+      </div>
+
+      <button class="btn block" id="draftBtn" style="margin-top:12px" onclick="draft.click()">產生字幕草稿</button>
+      <div class="status" id="draftStatus"></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="margin-bottom:4px">
+        <b class="grow" style="font-size:15px">影片聽打</b>
         <span class="muted" id="asrDevice"></span>
       </div>
-      <p class="muted" style="margin:4px 0 10px">用 Whisper 在手機上直接辨識，聲音不會上傳。跑在背景執行緒，辨識時畫面照樣能操作，也可以隨時停。第一次要下載模型（約 40–150 MB），建議接 Wi-Fi。</p>
+      <p class="muted" style="margin:4px 0 10px">影片裡有人講話時用這個。用 Whisper 在手機上直接辨識，聲音不會上傳。跑在背景執行緒，辨識時畫面照樣能操作，也可以隨時停。第一次要下載模型（約 40–150 MB），建議接 Wi-Fi。</p>
       <div class="row" style="gap:8px">
         <select id="asrModel" class="grow">
           <option value="Xenova/whisper-tiny">tiny — 最快，字比較容易錯</option>
@@ -185,12 +286,17 @@ details.note ul{padding-left:18px;margin:8px 0 0}
           <option value="">自動</option>
         </select>
       </div>
-      <button class="btn block" id="asrBtn" style="margin-top:10px" onclick="asr.click()">開始辨識全部片段</button>
+      <button class="btn block" id="asrBtn" style="margin-top:10px" onclick="asr.click()">開始辨識全部影片</button>
       <div class="bar"><div id="asrBar"></div></div>
       <div class="status" id="asrStatus"></div>
     </div>
 
     <div class="card">
+      <div class="row" style="margin-bottom:10px">
+        <b style="font-size:15px">字幕內容</b>
+        <span class="chip" id="subState">沒有字幕</span>
+        <button class="btn small" id="subConfirmBtn" style="margin-left:auto" onclick="review.open()" hidden>逐句確認</button>
+      </div>
       <div class="bulkbar">
         <button class="btn small" onclick="subs.selectAll(true)">全選</button>
         <button class="btn small" onclick="subs.selectAll(false)">取消選取</button>
@@ -217,12 +323,53 @@ details.note ul{padding-left:18px;margin:8px 0 0}
     </div>
   </section>
 
+  <!-- ============ 效果 ============ -->
+  <section id="panel-fx" hidden>
+    <div class="banner" id="fxNote" hidden></div>
+
+    <div class="card">
+      <b style="font-size:15px">畫面</b>
+      <label class="field">照片動態</label>
+      <div class="pill" id="motionPills"></div>
+      <label class="field">轉場</label>
+      <div class="pill" id="transPills"></div>
+      <label class="field">色調</label>
+      <div class="pill" id="lookPills"></div>
+      <canvas id="fxPreview" width="640" height="360" style="width:100%;border-radius:9px;background:#000;display:block;margin-top:12px"></canvas>
+      <p class="muted" style="margin:8px 0 0">上面是第一段素材套用色調的樣子。動態和轉場要到「匯出」頁按預覽才看得到。</p>
+    </div>
+
+    <div class="card">
+      <b style="font-size:15px">配樂</b>
+      <div class="pill" id="bgmPills" style="margin-top:10px"></div>
+      <input type="file" id="bgmPick" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.flac" class="hidden-input">
+      <p class="muted" id="bgmInfo" style="margin:9px 0 0"></p>
+      <div class="row" style="gap:8px;margin-top:10px">
+        <button class="btn small" id="bgmTry" onclick="bgm.audition()">試聽</button>
+        <button class="btn small" id="bgmFileBtn" onclick="bgm.pickFile()">選自己的音樂</button>
+      </div>
+      <label class="field">配樂音量 <span id="bgmVolVal" class="muted"></span></label>
+      <input type="range" id="bgmVol" min="0" max="100" value="50" oninput="ui.volChanged()">
+      <label class="field">影片原音音量 <span id="origVolVal" class="muted"></span></label>
+      <input type="range" id="origVol" min="0" max="100" value="100" oninput="ui.volChanged()">
+      <label class="check"><input type="checkbox" id="duck" checked onchange="ui.volChanged()"> 影片有聲音的段落自動壓低配樂</label>
+    </div>
+
+    <details class="note">
+      <summary>內建配樂是哪來的？</summary>
+      <ul>
+        <li>三首內建配樂都是這個網頁用程式當場算出來的簡單旋律，沒有用到任何音檔，所以沒有版權問題，但聽起來也比較陽春。</li>
+        <li>想要更好聽的音樂就選自己的檔案。要上傳到 YouTube 或其他平台的話，音樂的授權要自己確認。</li>
+      </ul>
+    </details>
+  </section>
+
   <!-- ============ 匯出 ============ -->
   <section id="panel-export" hidden>
     <div class="card">
       <canvas id="stage" width="1280" height="720"></canvas>
       <div class="bar"><div id="expBar"></div></div>
-      <div class="status" id="expStatus">按下方的按鈕先預覽，確認接點跟字幕都對再匯出。</div>
+      <div class="status" id="expStatus">按下方的按鈕先預覽，確認接點、效果跟字幕都對再匯出。</div>
     </div>
 
     <div class="card">
@@ -259,7 +406,9 @@ details.note ul{padding-left:18px;margin:8px 0 0}
     <details class="note" open>
       <summary>匯出前一定要知道的事</summary>
       <ul>
-        <li><b>快速接片</b>要求所有片段的編碼、解析度都一樣。不一樣的話會自動改用重新編碼，並告訴你原因。</li>
+        <li>有字幕的話，按下匯出會先列出全部字幕讓你<b>逐句確認</b>，確認之後才開始轉檔。</li>
+        <li><b>快速接片</b>只能接影片，而且所有片段的編碼、解析度都要一樣。有照片或規格不一樣時會自動改用重新編碼，並告訴你原因。</li>
+        <li>照片動態、轉場、色調、配樂都要<b>重新編碼</b>才會套用，快速接片不會動到畫面和聲音。</li>
         <li>只有<b>即時錄製</b>模式會跑跟影片一樣長的時間，其他兩種都快得多。</li>
         <li>匯出中<b>不要切到別的 App</b>。工具會自動要求螢幕恆亮權限。</li>
         <li>成品是 mp4，可以直接上傳 YouTube。</li>
@@ -270,6 +419,19 @@ details.note ul{padding-left:18px;margin:8px 0 0}
 </div>
 
 <div class="dock"><div class="wrap" id="dock"></div></div>
+
+<!-- ============ 字幕確認：轉檔前一定會經過這裡 ============ -->
+<div class="sheet" id="review" hidden role="dialog" aria-modal="true" aria-labelledby="reviewTitle">
+  <div class="sheet-head"><div class="wrap" style="padding:0">
+    <h2 id="reviewTitle">確認字幕</h2>
+    <p class="muted" id="reviewInfo"></p>
+  </div></div>
+  <div class="sheet-body"><div class="wrap" id="reviewList"></div></div>
+  <div class="sheet-foot"><div class="wrap">
+    <button class="btn" onclick="review.close()">回去修改</button>
+    <button class="btn primary grow" id="reviewGo" onclick="review.confirm()">確認，開始轉檔</button>
+  </div></div>
+</div>
 
 <!-- ============================================================
      Whisper 辨識用的 Web Worker 原始碼。
@@ -341,12 +503,14 @@ self.onmessage=async e=>{
 
 <script>
 /* ============================================================
-   接片室 vlog-stitch — 單檔前端影片合併工具
-   全部運算都在瀏覽器裡，影片不會離開你的手機。
+   接片室 vlog-stitch — 單檔前端 vlog 剪輯工具
+   把照片和影片接成一支，自動加字幕草稿、轉場和配樂。
+   全部運算都在瀏覽器裡，素材不會離開你的手機
+   （唯一的例外是你自己開啟的「AI 看圖寫字幕」，見 ai 模組）。
    ============================================================ */
 
 /* 每次改動都要更新，診斷記錄會印出來，用來確認手機拿到的是不是新版 */
-const APP_VERSION='v9 (2026-09-04)　裁切、聲音越界、聲音規格不一致全數修正（已用真影片驗證）';
+const APP_VERSION='v10 (2026-11-14)　照片素材、照片動態／轉場／色調、配樂混音、字幕草稿（離線／AI）、轉檔前確認字幕';
 
 const FONT='system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
 const FPS=30;
@@ -377,7 +541,19 @@ const state={
   res:720,
   ori:'auto',
   fit:'contain',
-  tab:'clips'
+  tab:'clips',
+  /* 照片與效果。預設全部關閉，純接影片的用法才不會被影響；
+     加入照片或按「快速成片」時，fx.preset() 會補上預設組合。 */
+  photoDur:3,          /* 照片預設顯示秒數 */
+  motion:'none',       /* 照片動態，見 MOTIONS */
+  trans:'none',        /* 轉場，見 TRANSES */
+  look:'none',         /* 色調，見 LOOKS */
+  bgm:'none',          /* 配樂：none／TRACKS 的 key／file */
+  bgmVol:.5,origVol:1,duck:true,
+  /* 字幕草稿 */
+  draftSrc:'offline',  /* offline／ai */
+  aiModel:'claude-opus-5-5',
+  subsOk:true          /* 字幕在上次確認之後有沒有再變動過 */
 };
 
 let uid=0;
@@ -396,23 +572,173 @@ function fmtMs(t){
 }
 function once(el,ev){return new Promise(r=>el.addEventListener(ev,r,{once:true}));}
 const clipLen=c=>Math.max(0,c.trimEnd-c.trimStart);
+const isPhoto=c=>c.kind==='photo';
+const hasPhoto=()=>state.clips.some(isPhoto);
 const totalLen=()=>state.clips.reduce((a,c)=>a+clipLen(c),0);
 function clipOffset(i){let t=0;for(let k=0;k<i;k++)t+=clipLen(state.clips[k]);return t;}
 
 /* ============================================================
-   影片片段
+   照片
+   ============================================================ */
+const IMG_EXT=/\.(jpe?g|png|webp|gif|bmp|avif|heic|heif)$/i;
+const VID_EXT=/\.(mp4|mov|m4v|webm|mkv|3gp)$/i;
+const THUMB=200;
+
+const photo={
+  cache:new Map(),   /* 片段 id → {key, p}，匯出用的工作圖最多留三張 */
+
+  /* 把檔案解成可以畫的東西。EXIF 的旋轉方向交給瀏覽器處理。 */
+  async decode(file,url){
+    if(typeof createImageBitmap==='function'){
+      try{return await createImageBitmap(file,{imageOrientation:'from-image'});}
+      catch(e){
+        try{return await createImageBitmap(file);}catch(e2){/* 改用 <img> 再試一次 */}
+      }
+    }
+    const img=new Image();
+    img.decoding='async';img.src=url||URL.createObjectURL(file);
+    if(img.decode)await img.decode();
+    else await new Promise((res,rej)=>{img.onload=res;img.onerror=()=>rej(new Error('decode'));});
+    return img;
+  },
+  dims(m){return {w:m.videoWidth||m.naturalWidth||m.width||0,h:m.videoHeight||m.naturalHeight||m.height||0};},
+
+  /* 等比例縮到 w×h 以內，畫成一張 canvas */
+  toCanvas(m,scale){
+    const d=photo.dims(m),s=Math.min(1,scale);
+    const cv=document.createElement('canvas');
+    cv.width=Math.max(1,Math.round(d.w*s));cv.height=Math.max(1,Math.round(d.h*s));
+    const x=cv.getContext('2d');
+    x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';
+    x.drawImage(m,0,0,cv.width,cv.height);
+    return cv;
+  },
+  shrink(m,maxSide){
+    const d=photo.dims(m);
+    return photo.toCanvas(m,maxSide/Math.max(d.w,d.h,1));
+  },
+  /* 縮圖用 blob 網址，列表重畫時才不用反覆塞一大串 base64 */
+  async thumbUrl(cv){
+    try{
+      if(cv.toBlob&&URL.createObjectURL){
+        const b=await new Promise(r=>cv.toBlob(r,'image/jpeg',.72));
+        if(b)return URL.createObjectURL(b);
+      }
+    }catch(e){}
+    return cv.toDataURL('image/jpeg',.72);
+  },
+
+  async probe(c){
+    const img=await photo.decode(c.file,c.url);
+    try{
+      const d=photo.dims(img);
+      if(!d.w||!d.h)throw new Error('size');
+      c.w=d.w;c.h=d.h;
+      try{c.thumb=await photo.thumbUrl(photo.shrink(img,THUMB));}catch(e){}
+    }finally{if(img.close)img.close();}
+    c.taken=(await exifTime(c.file))||c.file.lastModified||0;
+    c.dur=state.photoDur;c.trimStart=0;c.trimEnd=c.dur;c.ready=true;
+  },
+
+  /* 匯出／預覽用的工作圖。原圖動輒上千萬畫素，逐格縮放會很慢，
+     所以先縮到「剛好夠輸出尺寸再加一點推近空間」。 */
+  work(c,W,H){
+    const key=W+'x'+H+state.fit;
+    const hit=photo.cache.get(c.id);
+    if(hit&&hit.key===key)return hit.p;
+    const p=(async()=>{
+      const img=await photo.decode(c.file,c.url);
+      try{
+        const d=photo.dims(img);
+        const fit=state.fit==='cover'?Math.max(W/d.w,H/d.h):Math.min(W/d.w,H/d.h);
+        return photo.toCanvas(img,fit*1.2);
+      }finally{if(img.close)img.close();}
+    })();
+    photo.cache.set(c.id,{key,p});
+    while(photo.cache.size>3)photo.cache.delete(photo.cache.keys().next().value);
+    return p;
+  }
+};
+
+/* 從 JPEG 讀出拍攝時間（EXIF 的 DateTimeOriginal）。讀不到回 0，呼叫端會改用檔案的修改時間。 */
+async function exifTime(file){
+  try{
+    if(!/jpe?g$/i.test(file.type||'')&&!/\.jpe?g$/i.test(file.name||''))return 0;
+    const b=new DataView(await file.slice(0,262144).arrayBuffer());
+    if(b.byteLength<12||b.getUint16(0)!==0xFFD8)return 0;
+    let p=2;
+    while(p+4<=b.byteLength){
+      if(b.getUint8(p)!==0xFF)break;
+      const mk=b.getUint8(p+1),len=b.getUint16(p+2);
+      if(mk===0xE1&&p+10<=b.byteLength&&b.getUint32(p+4)===0x45786966)   /* "Exif" */
+        return exifDate(b,p+10,Math.min(b.byteLength,p+2+len));
+      if(mk===0xDA)break;   /* 影像資料開始，後面不會再有 EXIF */
+      p+=2+len;
+    }
+  }catch(e){}
+  return 0;
+}
+function exifDate(b,tiff,end){
+  const le=b.getUint16(tiff)===0x4949;
+  const u16=o=>b.getUint16(o,le),u32=o=>b.getUint32(o,le);
+  const find=(ifd,tag)=>{
+    if(ifd+2>end)return -1;
+    const n=u16(ifd);
+    for(let i=0;i<n;i++){
+      const e=ifd+2+i*12;
+      if(e+12>end)return -1;
+      if(u16(e)===tag)return e;
+    }
+    return -1;
+  };
+  const str=e=>{
+    const cnt=u32(e+4),off=cnt>4?tiff+u32(e+8):e+8;
+    let out='';
+    for(let i=0;i<cnt&&off+i<end;i++){const ch=b.getUint8(off+i);if(!ch)break;out+=String.fromCharCode(ch);}
+    return out;
+  };
+  const ifd0=tiff+u32(tiff+4);
+  let txt='';
+  const ex=find(ifd0,0x8769);            /* 指向 Exif 子目錄 */
+  if(ex>=0){
+    const sub=tiff+u32(ex+8);
+    let e=find(sub,0x9003);              /* DateTimeOriginal */
+    if(e<0)e=find(sub,0x9004);           /* DateTimeDigitized */
+    if(e>=0)txt=str(e);
+  }
+  if(!txt){const e=find(ifd0,0x0132);if(e>=0)txt=str(e);}   /* DateTime */
+  const m=txt.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+  if(!m)return 0;
+  const d=new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+m[6]);
+  return isNaN(d)?0:d.getTime();
+}
+
+/* ============================================================
+   素材片段（照片與影片）
    ============================================================ */
 const clips={
   async add(files){
+    let added=0;
     for(const f of files){
-      if(!f.type.startsWith('video/')&&!/\.(mp4|mov|m4v|webm|mkv|3gp)$/i.test(f.name))continue;
-      const c={id:++uid,file:f,name:f.name,url:URL.createObjectURL(f),
-               dur:0,w:0,h:0,trimStart:0,trimEnd:0,open:false,ready:false};
-      state.clips.push(c);
+      const img=(f.type||'').startsWith('image/')||IMG_EXT.test(f.name);
+      const vid=(f.type||'').startsWith('video/')||VID_EXT.test(f.name);
+      if(!img&&!vid)continue;
+      const c={id:++uid,kind:img?'photo':'video',file:f,name:f.name,url:URL.createObjectURL(f),
+               dur:0,w:0,h:0,trimStart:0,trimEnd:0,open:false,ready:false,
+               taken:f.lastModified||0,thumb:''};
+      state.clips.push(c);added++;
       ui.renderClips();
-      try{await clips.probe(c);}catch(e){c.err='讀不到這個檔案';}
+      try{
+        if(img)await photo.probe(c);
+        else{await clips.probe(c);clips.videoThumb(c);}
+      }catch(e){
+        c.err=img?'這張照片打不開，瀏覽器不支援這個格式':'讀不到這個檔案';
+      }
       ui.renderAll();
     }
+    if(added&&hasPhoto()&&fx.preset())
+      ui.toast('有照片，已自動套用照片動態、轉場和配樂，可以到「效果」頁調整');
+    if(files.length&&!added)ui.toast('這些檔案不是照片或影片');
   },
   probe(c){
     return new Promise((res,rej)=>{
@@ -427,18 +753,53 @@ const clips={
       setTimeout(()=>{if(!c.ready)c.dur?done():rej(new Error('timeout'));},12000);
     });
   },
+  /* 從影片抓一格畫面，回傳 canvas。給縮圖、字幕確認和 AI 看圖用，抓不到回 null。 */
+  async frame(c,maxSide){
+    const v=document.createElement('video');
+    v.muted=true;v.playsInline=true;v.preload='auto';v.src=c.url;
+    try{
+      await Promise.race([once(v,'loadeddata'),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))]);
+      const at=Math.min(c.trimStart+Math.min(1,clipLen(c)/2),Math.max(0,c.dur-.05));
+      if(at>.01){
+        v.currentTime=at;
+        await Promise.race([once(v,'seeked'),new Promise(r=>setTimeout(r,4000))]);
+      }
+      return photo.shrink(v,maxSide);
+    }catch(e){return null;}
+    finally{v.removeAttribute('src');try{v.load();}catch(e){}}
+  },
+  async videoThumb(c){
+    const cv=await clips.frame(c,THUMB);
+    if(!cv)return;
+    try{c.thumb=await photo.thumbUrl(cv);}catch(e){return;}
+    const el=$('th-'+c.id);
+    if(el)el.style.backgroundImage='url('+c.thumb+')';
+  },
+  changed(){subs.relink();ui.renderAll();},
   move(id,d){
     const i=state.clips.findIndex(c=>c.id===id);const j=i+d;
     if(i<0||j<0||j>=state.clips.length)return;
     [state.clips[i],state.clips[j]]=[state.clips[j],state.clips[i]];
-    ui.renderAll();
+    clips.changed();
+  },
+  /* 依拍攝時間排序。照片用 EXIF，其餘用檔案的修改時間；沒有時間的排最後，同時間的維持原順序。 */
+  sortByTime(say){
+    const key=c=>c.taken||Infinity;
+    state.clips=state.clips.map((c,i)=>[c,i])
+      .sort((a,b)=>(key(a[0])-key(b[0]))||(a[1]-b[1])).map(x=>x[0]);
+    clips.changed();
+    if(say)ui.toast('已依拍攝時間排序');
   },
   remove(id){
     const i=state.clips.findIndex(c=>c.id===id);if(i<0)return;
-    URL.revokeObjectURL(state.clips[i].url);
-    if(state.clips[i].vid)state.clips[i].vid.remove();
+    const c=state.clips[i];
+    URL.revokeObjectURL(c.url);
+    if(c.thumb&&c.thumb.startsWith('blob:'))URL.revokeObjectURL(c.thumb);
+    if(c.vid)c.vid.remove();
+    photo.cache.delete(c.id);
     state.clips.splice(i,1);
-    ui.renderAll();
+    clips.changed();
   },
   toggle(id){
     const c=state.clips.find(x=>x.id===id);if(!c)return;
@@ -448,7 +809,7 @@ const clips={
     const c=state.clips.find(x=>x.id===id);if(!c)return;
     if(which==='start')c.trimStart=clamp(val,0,Math.max(0,c.trimEnd-.3));
     else c.trimEnd=clamp(val,Math.min(c.dur,c.trimStart+.3),c.dur);
-    ui.syncClip(c);ui.renderStrip();
+    subs.relink();ui.syncClip(c);ui.renderStrip();
   },
   fromPreview(id,which){
     const v=$('pv-'+id);if(!v)return;
@@ -456,7 +817,19 @@ const clips={
   },
   resetTrim(id){
     const c=state.clips.find(x=>x.id===id);if(!c)return;
-    c.trimStart=0;c.trimEnd=c.dur;ui.renderClips();ui.renderStrip();
+    c.trimStart=0;c.trimEnd=c.dur;subs.relink();ui.renderClips();ui.renderStrip();
+  },
+  /* 單張照片的顯示秒數 */
+  setDur(id,val){
+    const c=state.clips.find(x=>x.id===id);if(!c||!isPhoto(c))return;
+    c.dur=c.trimEnd=clamp(val,.5,20);c.durSet=true;
+    subs.relink();ui.syncClip(c);ui.renderStrip();
+  },
+  /* 照片的預設秒數；個別調過的照片不動 */
+  setPhotoDur(v){
+    state.photoDur=v;
+    state.clips.forEach(c=>{if(isPhoto(c)&&!c.durSet)c.dur=c.trimEnd=v;});
+    clips.changed();ui.saveStyle();
   },
   /* 播放用的 video 元素，一段一個並重複使用 */
   el(c){
@@ -472,35 +845,77 @@ const clips={
 
 /* ============================================================
    字幕
+   ------------------------------------------------------------
+   字幕的 start／end 是成品時間軸上的秒數。草稿和聽打產生的字幕另外
+   記著它屬於哪一段素材（clip），素材換位置、改長度、被裁切之後，
+   relink() 會重新算出它在成品上的時間，不用整批重來：
+     span:'full'  照片草稿，整張照片的顯示時間
+     span:'head'  影片草稿，這段影片的開頭幾秒
+     ms／me       聽打字幕，原始影片裡的時間
+   手動新增和匯入 SRT 的字幕沒有 clip，時間固定不動。
    ============================================================ */
+const HEAD_LEN=4;
+
 const subs={
+  /* 字幕內容一有變動就要重新確認，轉檔前會擋下來 */
+  touch(){state.subsOk=false;ui.syncConfirm();},
   add(){
     const t=engine.lastTime||0;
     state.subs.push({id:++uid,start:t,end:t+2,text:'',sel:false});
-    subs.sort();ui.renderSubs();ui.renderStrip();
+    subs.sort();subs.touch();ui.renderSubs();ui.renderStrip();
     const el=document.querySelector('#subList .sub:last-child .txt');if(el)el.focus();
   },
   sort(){state.subs.sort((a,b)=>a.start-b.start);},
+  relink(){
+    const pos=new Map();let t=0;
+    for(const c of state.clips){const len=clipLen(c);pos.set(c.id,{c,off:t,len});t+=len;}
+    state.subs=state.subs.filter(s=>s.clip==null||pos.has(s.clip));
+    for(const s of state.subs){
+      if(s.clip==null)continue;
+      const {c,off,len}=pos.get(s.clip);
+      let a,b;
+      if(s.span==='full'){const pad=len>1?.15:0;a=pad;b=len-pad;}
+      else if(s.span==='head'){a=Math.min(.2,len/4);b=Math.min(len-.05,a+HEAD_LEN);}
+      else{a=s.ms-c.trimStart;b=s.me-c.trimStart;}
+      a=clamp(a,0,len);b=clamp(b,0,len);
+      s.off=!(b-a>.05);              /* 被裁掉了，不會出現在成品裡 */
+      s.start=off+a;s.end=off+(s.off?a:b);
+    }
+    subs.sort();
+  },
   selectAll(v){state.subs.forEach(s=>s.sel=v);ui.renderSubs();},
   toggle(id,v){const s=state.subs.find(x=>x.id===id);if(s)s.sel=v;},
   removeSelected(){
     const n=state.subs.filter(s=>s.sel).length;
     if(!n){ui.toast('先勾選要刪的字幕');return;}
     if(!confirm('刪除 '+n+' 句字幕？'))return;
-    state.subs=state.subs.filter(s=>!s.sel);ui.renderSubs();ui.renderStrip();
+    state.subs=state.subs.filter(s=>!s.sel);subs.touch();ui.renderSubs();ui.renderStrip();
+  },
+  remove(id){
+    state.subs=state.subs.filter(s=>s.id!==id);subs.touch();ui.renderSubs();ui.renderStrip();
   },
   clear(){
     if(!state.subs.length)return;
     if(!confirm('清空全部字幕？'))return;
-    state.subs=[];ui.renderSubs();ui.renderStrip();
+    state.subs=[];subs.touch();ui.renderSubs();ui.renderStrip();
   },
   update(id,k,v){
     const s=state.subs.find(x=>x.id===id);if(!s)return;
-    if(k==='text')s.text=v;
+    if(k==='text'){s.text=v;if(s.auto==='draft')s.edited=true;}
     else{
       s[k]=Math.max(0,parseFloat(v)||0);
       if(s.end<=s.start)s.end=s.start+.5;
+      /* 手動改過時間：還在原本那段素材裡就改記成素材內的時間，跑出去了就不再跟著素材走 */
+      if(s.clip!=null){
+        const i=state.clips.findIndex(c=>c.id===s.clip),c=state.clips[i];
+        const off=i<0?0:clipOffset(i);
+        if(c&&s.start>=off-.001&&s.end<=off+clipLen(c)+.001){
+          s.span=null;s.ms=c.trimStart+(s.start-off);s.me=c.trimStart+(s.end-off);
+        }else{s.clip=null;s.span=null;}
+        s.off=false;
+      }
     }
+    subs.touch();
     if(k!=='text'){subs.sort();ui.renderStrip();}
   },
   activeAt(t){return state.subs.filter(s=>t>=s.start&&t<s.end);},
@@ -519,9 +934,10 @@ const subs={
     return out;
   },
   exportSrt(){
-    if(!state.subs.length){ui.toast('還沒有字幕');return;}
+    const list=state.subs.filter(s=>!s.off&&(s.text||'').trim());
+    if(!list.length){ui.toast('還沒有字幕');return;}
     subs.sort();
-    const txt=state.subs.map((s,i)=>`${i+1}\n${fmtMs(s.start)} --> ${fmtMs(s.end)}\n${s.text}\n`).join('\n');
+    const txt=list.map((s,i)=>`${i+1}\n${fmtMs(s.start)} --> ${fmtMs(s.end)}\n${s.text}\n`).join('\n');
     const a=document.createElement('a');
     a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain;charset=utf-8'}));
     a.download='subtitles.srt';a.click();
@@ -530,31 +946,327 @@ const subs={
 };
 
 /* ============================================================
+   字幕草稿：替每一段素材先寫一句
+   ------------------------------------------------------------
+   離線：只知道拍攝時間，所以寫的是日期與時段，當作等你改寫的底稿。
+   AI ：把縮小的畫面傳給 Claude，照畫面內容寫。
+   兩種都只是草稿，轉檔前一定會先讓使用者逐句確認。
+   ============================================================ */
+const WEEK='日一二三四五六';
+function dayPart(h){
+  if(h<5)return '深夜';if(h<8)return '清晨';if(h<11)return '早上';if(h<13)return '中午';
+  if(h<17)return '下午';if(h<19)return '傍晚';return '晚上';
+}
+function clockText(d){return (d.getHours()%12||12)+':'+String(d.getMinutes()).padStart(2,'0');}
+
+const draft={
+  busy:false,stop:false,
+
+  /* 要寫草稿的素材：已經有聽打字幕的影片跳過，免得兩種疊在一起 */
+  targets(){
+    const heard=new Set(state.subs.filter(s=>s.clip!=null&&s.auto==='asr').map(s=>s.clip));
+    return state.clips.filter(c=>c.ready&&!heard.has(c.id));
+  },
+  /* map：片段 id → 文字。舊的草稿整批換掉，手動字幕和聽打字幕不動。 */
+  apply(map){
+    state.subs=state.subs.filter(s=>s.auto!=='draft');
+    let n=0;
+    for(const c of state.clips){
+      if(!map.has(c.id))continue;
+      state.subs.push({id:++uid,start:0,end:0,text:map.get(c.id)||'',sel:false,
+        clip:c.id,span:isPhoto(c)?'full':'head',auto:'draft'});
+      n++;
+    }
+    subs.relink();subs.touch();
+    ui.renderSubs();ui.renderStrip();
+    return n;
+  },
+
+  offlineText(c,prev){
+    if(!c.taken)return '';
+    const d=new Date(c.taken);
+    const date=(d.getMonth()+1)+'月'+d.getDate()+'日';
+    const time=dayPart(d.getHours())+' '+clockText(d);
+    if(!prev||!prev.taken)return date+' 週'+WEEK[d.getDay()];
+    if(new Date(prev.taken).toDateString()!==d.toDateString())return date+' '+time;
+    return time;
+  },
+  offline(){
+    const map=new Map();let prev=null;
+    for(const c of draft.targets()){map.set(c.id,draft.offlineText(c,prev));prev=c;}
+    return map;
+  },
+
+  say(msg,cls){
+    for(const id of ['draftStatus','quickStatus']){
+      const el=$(id);if(!el)continue;
+      el.className='status'+(cls==='err'?' err':cls==='warn'?' warn':'');
+      el.style.color=cls==='ok'?'var(--ok)':'';
+      el.textContent=msg;
+    }
+  },
+  click(){draft.busy?(draft.stop=true,draft.say('停止中…')):draft.run();},
+
+  /* 回傳 true 表示草稿已經就緒（包含使用者選擇沿用舊草稿） */
+  async run(){
+    if(draft.busy)return false;
+    if(!state.clips.length){ui.toast('先加入照片或影片');return false;}
+    if(state.clips.some(c=>!c.ready&&!c.err)){ui.toast('素材還在讀取，等一下');return false;}
+    const old=state.subs.filter(s=>s.auto==='draft');
+    if(old.some(s=>s.edited)&&!confirm('要重新產生草稿嗎？你改過的 '+old.filter(s=>s.edited).length+' 句也會被換掉。\n（取消＝沿用現在的字幕）'))
+      return true;
+    const list=draft.targets();
+    if(!list.length){draft.say('每一段影片都已經有聽打字幕，不需要草稿。');return true;}
+
+    draft.busy=true;draft.stop=false;ui.syncDraft();
+    try{
+      let map;
+      if(state.draftSrc==='ai'){
+        map=await ai.captions(list,(done,all)=>draft.say('AI 看圖寫字幕中　'+done+' / '+all+' 張'),()=>draft.stop);
+        if(draft.stop){draft.say('已停止，字幕沒有變動。','warn');return false;}
+      }else map=draft.offline();
+      const n=draft.apply(map);
+      draft.say(state.draftSrc==='ai'
+        ?'AI 寫好 '+n+' 句草稿，轉檔前會讓你逐句確認。'
+        :'已依拍攝時間寫好 '+n+' 句草稿，內容只有日期和時段，記得改成你想說的話。','ok');
+      return true;
+    }catch(e){
+      draft.say('草稿沒有產生：'+e.message,'err');
+      return false;
+    }finally{
+      draft.busy=false;draft.stop=false;ui.syncDraft();
+    }
+  }
+};
+
+/* ============================================================
+   AI 看圖寫字幕（Claude API，使用者自己的金鑰）
+   ------------------------------------------------------------
+   官方 SDK 從 CDN 動態載入，跟 mediabunny、transformers.js 一樣不進版本庫。
+   請求直接從瀏覽器送到 api.anthropic.com，中間沒有自己的伺服器。
+   ============================================================ */
+const ANTHROPIC_CDN=[
+  'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1/+esm',
+  'https://esm.sh/@anthropic-ai/sdk@1'
+];
+const AI_MODELS=[
+  ['claude-opus-5-5','Claude Opus 5.5（預設，寫得最好）'],
+  ['claude-sonnet-5-5','Claude Sonnet 5.5（比較省）'],
+  ['claude-haiku-5-5','Claude Haiku 5.5（最快最省）']
+];
+/* 這兩個模型被安全分類器擋下時，可以請伺服器自動改用備援模型重跑同一個請求 */
+const AI_FALLBACK=new Set(['claude-opus-5-5','claude-sonnet-5-5']);
+const AI_BATCH=20;   /* 單次請求超過 20 張圖，API 會套用更嚴格的單張尺寸上限，所以分批送 */
+const AI_SIDE=768;   /* 傳出去的畫面最長邊。一張約 (寬/28)×(高/28) 個 token */
+
+const AI_SYSTEM=`你在幫一位台灣的使用者替日常 vlog 寫字幕。使用者會給你一組依時間順序排列的畫面，每一張前面有編號、類型和拍攝時間。請替每一張寫一句會直接疊在畫面上的字幕。
+
+這些字幕是草稿，使用者在轉檔前會逐句確認與修改，所以請寫得具體自然，讓人大部分可以直接沿用。
+
+寫法：
+- 用正體中文和台灣慣用的說法，像本人在記錄自己的一天，口語、輕鬆。
+- 每句以 6 到 16 個字為宜，最多 22 個字，因為每張畫面只會出現幾秒。
+- 只寫畫面裡看得出來的事。地點、人名、店名、心情如果畫面上看不出來、使用者也沒有說，就不要自己編；不要描述或猜測畫面中人物的身分。
+- 整組字幕要像同一支影片：前後有連貫、句型有變化，第一句可以帶出日期或時段，最後一句可以收尾。
+- 純文字，不要 hashtag、表情符號、引號，句尾不加句號。`;
+
+const AI_SCHEMA={
+  type:'object',
+  properties:{
+    captions:{
+      type:'array',
+      items:{
+        type:'object',
+        properties:{
+          index:{type:'integer',description:'畫面的編號'},
+          text:{type:'string',description:'這張畫面的字幕'}
+        },
+        required:['index','text'],
+        additionalProperties:false
+      }
+    }
+  },
+  required:['captions'],
+  additionalProperties:false
+};
+
+const ai={
+  lib:null,keyMem:'',
+
+  async load(){
+    if(ai.lib)return ai.lib;
+    let last=null;
+    for(const url of ANTHROPIC_CDN){
+      try{
+        const m=await import(url);
+        const A=m.default||m.Anthropic;
+        if(typeof A==='function'){ai.lib=A;return A;}
+      }catch(e){last=e;}
+    }
+    throw new Error('載入不到 Claude SDK，檢查一下網路：'+((last&&last.message)||''));
+  },
+  key(){return (ai.keyMem||'').trim();},
+  keyChanged(){
+    ai.keyMem=$('aiKey').value;
+    try{
+      if($('aiRemember').checked&&ai.key())localStorage.setItem('vlog-stitch-ai-key',ai.key());
+      else localStorage.removeItem('vlog-stitch-ai-key');
+    }catch(e){}
+  },
+  modelChanged(){state.aiModel=$('aiModel').value;ui.saveStyle();},
+  restore(){
+    try{
+      const k=localStorage.getItem('vlog-stitch-ai-key')||'';
+      if(k){ai.keyMem=k;$('aiKey').value=k;$('aiRemember').checked=true;}
+    }catch(e){}
+    $('aiModel').innerHTML=AI_MODELS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+    if(!AI_MODELS.some(m=>m[0]===state.aiModel))state.aiModel=AI_MODELS[0][0];
+    $('aiModel').value=state.aiModel;
+  },
+
+  /* 一段素材 → 要給模型看的那張圖（JPEG 的 base64），只傳縮小後的畫面 */
+  async image(c){
+    let cv=null;
+    if(isPhoto(c)){
+      const img=await photo.decode(c.file,c.url);
+      try{cv=photo.shrink(img,AI_SIDE);}finally{if(img.close)img.close();}
+    }else cv=await clips.frame(c,AI_SIDE);
+    if(!cv)return '';
+    const m=/^data:image\/jpeg;base64,(.+)$/.exec(cv.toDataURL('image/jpeg',.8));
+    return m?m[1]:'';
+  },
+  label(c,n){
+    let s='第 '+n+' 張｜'+(isPhoto(c)?'照片':'影片（這是其中一格畫面）');
+    if(c.taken){
+      const d=new Date(c.taken),p=v=>String(v).padStart(2,'0');
+      s+='｜'+d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' 週'+WEEK[d.getDay()]
+        +' '+p(d.getHours())+':'+p(d.getMinutes());
+    }
+    return s;
+  },
+
+  /* 組出一次請求。items：[{n,label,data}]，done：前面幾批已經寫好的 [{n,text}] */
+  request(items,done,hint,total){
+    const content=[];
+    let head='這支 vlog 一共有 '+total+' 張畫面。';
+    if(hint)head+='\n使用者的補充說明：'+hint;
+    if(done.length)head+='\n\n前面已經寫好的字幕（讓你接續語氣，不用重寫）：\n'
+      +done.map(d=>'第 '+d.n+' 張：'+d.text).join('\n');
+    content.push({type:'text',text:head});
+    for(const it of items){
+      content.push({type:'text',text:it.label});
+      content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data:it.data}});
+    }
+    content.push({type:'text',text:'請替第 '+items[0].n+' 到第 '+items[items.length-1].n
+      +' 張各寫一句字幕，index 填上面的編號。'});
+    const req={
+      model:state.aiModel,
+      max_tokens:16000,
+      thinking:{type:'adaptive'},
+      output_config:{effort:'medium',format:{type:'json_schema',schema:AI_SCHEMA}},
+      system:AI_SYSTEM,
+      messages:[{role:'user',content}]
+    };
+    if(AI_FALLBACK.has(state.aiModel)){
+      req.betas=['server-side-fallback-2026-07-01'];
+      req.fallbacks='default';
+    }
+    return req;
+  },
+  /* 從回應取出 {編號: 文字} */
+  parse(res){
+    if(res.stop_reason==='refusal'){
+      const why=res.stop_details&&res.stop_details.explanation;
+      throw new Error('模型拒絕處理這批畫面'+(why?'（'+why+'）':''));
+    }
+    if(res.stop_reason==='max_tokens')throw new Error('模型的回覆被截斷了，請減少素材數量再試一次');
+    const tb=(res.content||[]).find(b=>b.type==='text');
+    if(!tb)throw new Error('模型沒有回傳文字');
+    let data;
+    try{data=JSON.parse(tb.text);}catch(e){throw new Error('模型回傳的格式讀不懂');}
+    const out=new Map();
+    for(const c of (data.captions||[])){
+      if(Number.isInteger(c.index)&&typeof c.text==='string')out.set(c.index,c.text.trim());
+    }
+    return out;
+  },
+  explain(A,e){
+    if(e instanceof A.AuthenticationError)
+      return 'API key 不被接受（401）。請確認金鑰是否正確；組織開了零資料保留（ZDR）時，API 也不接受瀏覽器直接呼叫';
+    if(e instanceof A.PermissionDeniedError)return '這把金鑰沒有權限使用這個模型（403）';
+    if(e instanceof A.NotFoundError)return '找不到這個模型（404），換一個模型試試';
+    if(e instanceof A.RateLimitError)return '請求太頻繁或額度用完了（429），等一下再試';
+    if(e instanceof A.BadRequestError)return 'API 不接受這個請求（400）：'+e.message;
+    if(e instanceof A.APIConnectionError)return '連不上 api.anthropic.com，檢查一下網路';
+    if(e instanceof A.APIError)return 'Claude API 回報錯誤（'+(e.status||'?')+'）：'+e.message;
+    return e.message||String(e);
+  },
+
+  /* list：要寫字幕的片段。回傳 Map(片段 id → 文字)。 */
+  async captions(list,onProgress,stopped){
+    if(!ai.key())throw new Error('還沒填 Anthropic API key（在「字幕」頁的字幕草稿裡）');
+    const A=await ai.load();
+    const client=new A({apiKey:ai.key(),dangerouslyAllowBrowser:true});
+    const hint=(($('aiHint')&&$('aiHint').value)||'').trim();
+    const out=new Map(),done=[];
+    for(let at=0;at<list.length;at+=AI_BATCH){
+      if(stopped&&stopped())break;
+      const part=list.slice(at,at+AI_BATCH),items=[];
+      for(let k=0;k<part.length;k++){
+        const data=await ai.image(part[k]);
+        if(data)items.push({n:at+k+1,c:part[k],label:ai.label(part[k],at+k+1),data});
+      }
+      if(onProgress)onProgress(at,list.length);
+      if(!items.length)continue;
+      const req=ai.request(items,done,hint,list.length);
+      let res;
+      try{
+        res=req.betas?await client.beta.messages.create(req):await client.messages.create(req);
+      }catch(e){throw new Error(ai.explain(A,e));}
+      const got=ai.parse(res);
+      for(const it of items){
+        const text=got.get(it.n)||'';
+        out.set(it.c.id,text);
+        if(text)done.push({n:it.n,text});
+      }
+      if(onProgress)onProgress(Math.min(list.length,at+part.length),list.length);
+    }
+    return out;
+  }
+};
+
+/* ============================================================
    字幕繪製
    ============================================================ */
+/* 把字幕拆成可以斷行的小塊：中文一個字一塊，英數一個詞一塊。
+   gap 記下這一塊前面在原文裡有沒有空白，排版時才能把使用者打的空白留住。 */
 function tokenize(text){
-  const out=[];let buf='';
+  const out=[];let buf='',gap=false;
+  const push=s=>{out.push({s,gap:gap&&out.length>0});gap=false;};
   for(const ch of text){
     if(/[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(ch)){
-      if(buf){out.push(buf);buf='';}out.push(ch);
+      if(buf){push(buf);buf='';}
+      if(ch==='\u3000')gap=true;else push(ch);
     }else if(/\s/.test(ch)){
-      if(buf){out.push(buf);buf='';}
+      if(buf){push(buf);buf='';}
+      gap=true;
     }else buf+=ch;
   }
-  if(buf)out.push(buf);
+  if(buf)push(buf);
   return out;
 }
 function wrapLines(ctx,text,maxW){
   const toks=tokenize(text),lines=[];let cur='';
   for(const t of toks){
-    const sep=(cur&&/[A-Za-z0-9]$/.test(cur)&&/^[A-Za-z0-9]/.test(t))?' ':'';
-    const test=cur+sep+t;
-    if(cur&&ctx.measureText(test).width>maxW){lines.push(cur);cur=t;}
+    const sep=cur&&(t.gap||(/[A-Za-z0-9]$/.test(cur)&&/^[A-Za-z0-9]/.test(t.s)))?' ':'';
+    const test=cur+sep+t.s;
+    if(cur&&ctx.measureText(test).width>maxW){lines.push(cur);cur=t.s;}
     else cur=test;
   }
   if(cur)lines.push(cur);
   return lines.slice(0,4);
 }
+
 function roundRect(ctx,x,y,w,h,r){
   ctx.beginPath();
   ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
@@ -593,11 +1305,539 @@ function drawSubtitle(ctx,text,W,H){
 }
 
 /* ============================================================
+   畫面效果：照片動態、轉場、色調、模糊填滿
+   ------------------------------------------------------------
+   預覽（engine）和匯出（xport）畫每一格都走同一套：
+     paint()   畫底圖（留黑邊／裁切填滿／模糊填滿）
+     finish()  套色調 → 留一份給下一段轉場用 → 疊上一段做轉場 → 片頭片尾淡入淡出
+   字幕在這之後才畫，所以轉場時字幕不會跟著糊掉。
+
+   轉場不需要同時解碼兩段素材：每段快結束時把畫面留一份（凍結的最後一格），
+   下一段開頭再把它疊上去慢慢淡出或滑走。成品長度和聲音都不受影響。
+   ============================================================ */
+const TRANS_DUR=.5;      /* 轉場秒數 */
+const KEEP_TAIL=.25;     /* 每段最後這麼久的畫面會被留存 */
+const DIP=.3;            /* 「淡入淡出」轉場，前後各這麼久 */
+const KB_ZOOM=.12;       /* 照片推近的幅度 */
+
+const MOTIONS=[['none','關'],['auto','自動'],['in','推近'],['out','拉遠'],['pan','平移']];
+const TRANSES=[['none','無'],['fade','交叉淡化'],['black','淡入淡出'],['slide','滑動'],['zoom','放大淡出']];
+const LOOKS=[['none','原色'],['warm','暖色'],['cool','冷調'],['mono','黑白'],['film','底片']];
+
+const fx={
+  a:null,b:null,          /* 兩張離屏畫布輪流用：a 是上一段的最後畫面，b 正在收這一段的 */
+  hold:false,kept:false,blur:null,
+  touched:{},             /* 使用者自己動過哪些效果設定；沒動過的才會被自動預設覆蓋 */
+
+  /* 會不會動到畫面或聲音（決定「快速接片」還能不能用） */
+  any(){return state.trans!=='none'||state.look!=='none'||bgm.active()||state.origVol!==1;},
+
+  /* 有照片時的預設組合。只補使用者沒碰過的項目，有改動才回傳 true。 */
+  preset(){
+    let changed=false;
+    const set=(k,v)=>{if(!fx.touched[k]&&state[k]==='none'){state[k]=v;changed=true;}};
+    set('motion','auto');set('trans','fade');set('bgm','sunny');
+    if(!fx.touched.fit&&state.fit==='contain'){state.fit='blur';changed=true;}
+    if(state.mode==='fast'){state.mode=mb.supported()?'encode':'record';changed=true;}
+    if(changed){ui.syncPills();ui.syncFx();ui.syncModePills();ui.saveStyle();}
+    return changed;
+  },
+
+  surf(k,W,H){
+    let s=fx[k];
+    if(!s)s=fx[k]={cv:document.createElement('canvas'),ctx:null};
+    if(s.cv.width!==W||s.cv.height!==H){s.cv.width=W;s.cv.height=H;s.ctx=null;}
+    if(!s.ctx)s.ctx=s.cv.getContext('2d');
+    return s;
+  },
+  reset(){fx.hold=false;fx.kept=false;},
+  /* 換下一段：剛剛留存的畫面變成「上一段」 */
+  next(){const t=fx.a;fx.a=fx.b;fx.b=t;fx.hold=fx.kept;fx.kept=false;},
+
+  motionOf(c,i){
+    let k=state.motion;
+    if(k==='auto')k=['in','left','out','right'][i%4];
+    if(k==='pan')k=i%2?'right':'left';
+    /* 沒有裁切填滿時照片兩側是空的，橫移會露出底色，改成推近／拉遠 */
+    if((k==='left'||k==='right')&&state.fit!=='cover')k=i%2?'out':'in';
+    return k;
+  },
+
+  /* 畫一張照片。p：這張照片播到哪了（0→1），kind：動態種類 */
+  drawPhoto(ctx,img,W,H,p,kind,fit){
+    const iw=img.width,ih=img.height;
+    if(!iw||!ih)return;
+    const s=fit==='cover'?Math.max(W/iw,H/ih):Math.min(W/iw,H/ih);
+    let z=1,dx=0;
+    if(kind==='in')z=1+KB_ZOOM*p;
+    else if(kind==='out')z=1+KB_ZOOM*(1-p);
+    else if(kind==='left'||kind==='right'){
+      z=1+KB_ZOOM;
+      dx=(kind==='left'?1:-1)*W*KB_ZOOM*.45*(1-2*p);
+    }
+    const w=iw*s*z,h=ih*s*z;
+    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+    ctx.drawImage(img,(W-w)/2+dx,(H-h)/2,w,h);
+  },
+
+  /* 畫底圖。draw(ctx,fit,w,h,bg) 由呼叫端提供；bg 為 true 表示正在畫模糊背景。
+     mw×mh 是素材的尺寸，比例跟輸出一樣時就不需要模糊背景。 */
+  paint(ctx,W,H,mw,mh,draw){
+    ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+    if(state.fit==='blur'){
+      const same=mw&&mh&&Math.abs(mw/mh-W/H)<.01;
+      if(!same){
+        const bw=Math.max(16,Math.round(W/20)),bh=Math.max(16,Math.round(H/20));
+        const s=fx.surf('blur',bw,bh);
+        s.ctx.fillStyle='#000';s.ctx.fillRect(0,0,bw,bh);
+        draw(s.ctx,'cover',bw,bh,true);
+        ctx.save();
+        ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+        /* 小圖放大本身就是糊的；支援 filter 的瀏覽器再多糊一層，把放大的格子感抹掉 */
+        if(typeof ctx.filter==='string')ctx.filter='blur('+Math.round(Math.max(W,H)/70)+'px)';
+        ctx.drawImage(s.cv,-W*.04,-H*.04,W*1.08,H*1.08);
+        if(typeof ctx.filter==='string')ctx.filter='none';
+        ctx.fillStyle='rgba(0,0,0,.38)';ctx.fillRect(0,0,W,H);
+        ctx.restore();
+      }
+      draw(ctx,'contain',W,H,false);
+    }else draw(ctx,state.fit==='cover'?'cover':'contain',W,H,false);
+  },
+
+  /* 色調。用混合模式而不是 ctx.filter，Safari 也能跑。 */
+  look(ctx,W,H,key){
+    const k=key||state.look;
+    if(k==='none')return;
+    ctx.save();
+    if(k==='mono'){
+      ctx.globalCompositeOperation='saturation';ctx.fillStyle='#808080';ctx.fillRect(0,0,W,H);
+    }else if(k==='warm'){
+      ctx.globalCompositeOperation='soft-light';ctx.fillStyle='rgba(255,168,64,.30)';ctx.fillRect(0,0,W,H);
+    }else if(k==='cool'){
+      ctx.globalCompositeOperation='soft-light';ctx.fillStyle='rgba(64,150,255,.28)';ctx.fillRect(0,0,W,H);
+    }else if(k==='film'){
+      ctx.globalCompositeOperation='saturation';ctx.fillStyle='rgba(128,128,128,.32)';ctx.fillRect(0,0,W,H);
+      ctx.globalCompositeOperation='soft-light';ctx.fillStyle='rgba(255,196,128,.26)';ctx.fillRect(0,0,W,H);
+      ctx.globalCompositeOperation='source-over';
+      const r=Math.hypot(W,H)/2;
+      const g=ctx.createRadialGradient(W/2,H/2,r*.55,W/2,H/2,r);
+      g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.42)');
+      ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    }
+    ctx.restore();
+  },
+
+  /* 把上一段留存的畫面疊上來。q：轉場進度 0→1 */
+  blend(ctx,W,H,q){
+    const s=fx.a;if(!s)return;
+    const e=q<.5?4*q*q*q:1-Math.pow(-2*q+2,3)/2;   /* 緩入緩出 */
+    ctx.save();
+    if(state.trans==='fade'){ctx.globalAlpha=1-e;ctx.drawImage(s.cv,0,0,W,H);}
+    else if(state.trans==='slide'){ctx.drawImage(s.cv,-e*W,0,W,H);}
+    else if(state.trans==='zoom'){
+      const z=1+e*.35;ctx.globalAlpha=1-e;
+      ctx.drawImage(s.cv,(W-W*z)/2,(H-H*z)/2,W*z,H*z);
+    }
+    ctx.restore();
+  },
+
+  /* o：{i 第幾段, n 總段數, tl 這段播到第幾秒, len 這段多長, t 成品時間, total 成品總長} */
+  finish(ctx,cv,W,H,o){
+    fx.look(ctx,W,H);
+    const tr=state.trans;
+    if(tr==='none')return;
+    if(tr==='black'){
+      const d=Math.min(DIP,o.len*.45);
+      let a=0;
+      if(o.i>0)a=Math.max(a,1-o.tl/d);
+      if(o.i<o.n-1)a=Math.max(a,1-(o.len-o.tl)/d);
+      if(a>0){ctx.fillStyle='rgba(0,0,0,'+clamp(a,0,1).toFixed(3)+')';ctx.fillRect(0,0,W,H);}
+    }else{
+      const d=Math.min(TRANS_DUR,o.len*.45);
+      if(o.i<o.n-1&&o.tl>=o.len-KEEP_TAIL){
+        fx.surf('b',W,H).ctx.drawImage(cv,0,0,W,H);fx.kept=true;
+      }
+      if(fx.hold&&o.tl<d)fx.blend(ctx,W,H,o.tl/d);
+    }
+    /* 整支影片的片頭淡入、片尾淡出 */
+    const tin=Math.min(.4,o.total/6),tout=Math.min(.6,o.total/5);
+    const e=Math.max(1-o.t/tin,1-(o.total-o.t)/tout);
+    if(e>0){ctx.fillStyle='rgba(0,0,0,'+clamp(e,0,1).toFixed(3)+')';ctx.fillRect(0,0,W,H);}
+  }
+};
+
+/* ============================================================
+   內建配樂：用程式直接算出波形
+   ------------------------------------------------------------
+   不帶任何音檔，所以沒有版權問題，index.html 也不會變大。
+   每首是八小節、可以無縫循環的短旋律：音符的尾巴超過結尾時會繞回開頭。
+   音符寫法：'C4'、'A#3'；旋律一小節八格，'.' 是休止，'-' 是延長前一個音。
+   ============================================================ */
+const NOTE={C:0,'C#':1,D:2,'D#':3,E:4,F:5,'F#':6,G:7,'G#':8,A:9,'A#':10,B:11};
+function noteHz(name){
+  const m=/^([A-G]#?)(\d)$/.exec(name);
+  return 440*Math.pow(2,(NOTE[m[1]]+(+m[2]-4)*12-9)/12);
+}
+
+/* 音色：att 起音秒數、dec 衰減時間常數、rel 放開後的尾音、h 泛音 [倍數, 音量, 額外衰減速度] */
+const VOICE={
+  keys: {att:.004,dec:.9, rel:.14,h:[[1,1,0],[2,.32,3],[3,.11,6],[4,.04,9]]},
+  pluck:{att:.002,dec:.26,rel:.06,h:[[1,1,0],[2,.45,5],[3,.2,9]]},
+  bell: {att:.002,dec:.5, rel:.12,h:[[1,1,0],[2,.28,2.5],[4,.12,7]]},
+  soft: {att:.012,dec:1.1,rel:.2, h:[[1,1,0],[2,.18,2],[3,.05,5]]},
+  bass: {att:.006,dec:.55,rel:.07,h:[[1,1,0],[2,.22,3]]}
+};
+
+const TRACKS={
+  sunny:{label:'輕快',bpm:112,swing:0,drums:'pop',lead:'bell',keys:'pluck',
+    arp:[0,2,1,2,0,2,1,2],
+    chords:['C2 C4 E4 G4','G2 B3 D4 G4','A2 C4 E4 A4','F2 C4 F4 A4',
+            'C2 C4 E4 G4','G2 B3 D4 G4','F2 C4 F4 A4','G2 B3 D4 G4'],
+    melody:['E5 . G5 . E5 D5 C5 .','D5 . . B4 D5 . G4 .','C5 . E5 . A5 G5 E5 .','F5 . . E5 C5 . A4 .',
+            'E5 . G5 . C6 . G5 E5','D5 . G5 . B4 . D5 .','C5 . A4 . C5 . F5 E5','D5 - - . G4 A4 B4 .']},
+  cozy:{label:'溫暖',bpm:84,swing:0,drums:'soft',lead:'soft',keys:'keys',
+    arp:null,
+    chords:['F2 A3 C4 F4','D2 A3 D4 F4','A#1 A#3 D4 F4','C2 G3 C4 E4',
+            'F2 A3 C4 F4','A1 A3 C4 E4','A#1 A#3 D4 F4','C2 G3 C4 E4'],
+    melody:['A4 - C5 - F5 - - .','F5 - E5 D5 - - A4 .','D5 - F5 - D5 - A#4 .','C5 - - - E5 - G5 .',
+            'A5 - G5 F5 - - C5 .','E5 - C5 - A4 - - .','D5 - F5 - A#5 - A5 G5','G5 - - E5 - - C5 .']},
+  chill:{label:'放鬆',bpm:74,swing:.14,drums:'lofi',lead:'soft',keys:'keys',
+    arp:null,
+    chords:['F2 A3 C4 E4','E2 G3 B3 D4','D2 F3 A3 C4','C2 E3 G3 B3',
+            'F2 A3 C4 E4','E2 G3 B3 D4','D2 F3 A3 C4','G1 F3 B3 D4'],
+    melody:['. . E5 - - C5 A4 -','. . G4 - B4 - - .','. . A4 - C5 D5 - -','E5 - - - . . G4 .',
+            '. . A5 - G5 E5 - -','. . D5 - B4 - G4 .','. . C5 - A4 - F4 -','D5 - - B4 - . . .']}
+};
+
+const synth={
+  cache:new Map(),
+
+  /* 加一個有音高的音。用遞迴式算正弦波，不必每個樣本都呼叫 Math.sin。 */
+  tone(o,t0,dur,f,amp,pan,V){
+    const {L,R,sr,n}=o;
+    const gl=amp*Math.cos((pan+1)*Math.PI/4),gr=amp*Math.sin((pan+1)*Math.PI/4);
+    const len=Math.min(n,Math.round((dur+V.rel)*sr));
+    const att=Math.max(1,Math.round(V.att*sr)),hold=Math.round(dur*sr),rel=Math.max(1,len-hold);
+    const kd=Math.exp(-1/(V.dec*sr));
+    const ps=[];
+    for(const [mul,vol,extra] of V.h){
+      const w=2*Math.PI*f*mul/sr;
+      if(w>=Math.PI*.9)continue;   /* 超過取樣率上限的泛音不要 */
+      ps.push({c:2*Math.cos(w),y1:0,y2:-Math.sin(w),g:vol,k:Math.exp(-extra/sr)});
+    }
+    let env=1,j=Math.round(t0*sr)%n;
+    if(j<0)j+=n;
+    for(let k=0;k<len;k++){
+      let s=0;
+      for(const p of ps){
+        const y=p.c*p.y1-p.y2;p.y2=p.y1;p.y1=y;
+        s+=y*p.g;p.g*=p.k;
+      }
+      let e=k<att?k/att:(env*=kd);
+      if(k>hold)e*=1-(k-hold)/rel;
+      L[j]+=s*e*gl;R[j]+=s*e*gr;
+      if(++j>=n)j=0;
+    }
+  },
+  /* 大鼓：頻率快速下滑的正弦波 */
+  kick(o,t0,amp){
+    const {L,R,sr,n}=o,len=Math.round(.24*sr);
+    let ph=0,j=Math.round(t0*sr)%n;
+    for(let k=0;k<len;k++){
+      const t=k/sr;
+      ph+=2*Math.PI*(46+95*Math.exp(-t*30))/sr;
+      const s=Math.sin(ph)*Math.exp(-t*13)*amp;
+      L[j]+=s;R[j]+=s;
+      if(++j>=n)j=0;
+    }
+  },
+  /* 雜訊短音：bright 高的像 hi-hat，低的像刷子或小鼓。亂數種子固定，每次算出來都一樣。 */
+  hit(o,t0,dur,amp,pan,bright,seed){
+    const {L,R,sr,n}=o,len=Math.round(dur*sr);
+    const gl=amp*Math.cos((pan+1)*Math.PI/4),gr=amp*Math.sin((pan+1)*Math.PI/4);
+    let x=(seed*2654435761)>>>0||1,prev=0,low=0,j=Math.round(t0*sr)%n;
+    for(let k=0;k<len;k++){
+      x=(Math.imul(x,1664525)+1013904223)>>>0;
+      const w=x/2147483648-1;
+      low+=(w-low)*.25;                       /* 低通後的雜訊 */
+      const s=(bright?(w-prev)*.5:low)*Math.exp(-k/(len*.28));
+      prev=w;
+      L[j]+=s*gl;R[j]+=s*gr;
+      if(++j>=n)j=0;
+    }
+  },
+
+  render(key,sr){
+    const id=key+'@'+sr;
+    if(synth.cache.has(id))return synth.cache.get(id);
+    const T=TRACKS[key];
+    if(!T)throw new Error('沒有這首配樂：'+key);
+    const bar=240/T.bpm,step=bar/8,bars=T.chords.length;
+    const n=Math.round(bar*bars*sr);
+    const o={L:new Float32Array(n),R:new Float32Array(n),sr,n};
+    const at=(b,s)=>b*bar+s*step+(s%2?T.swing*step:0);
+
+    for(let b=0;b<bars;b++){
+      const ch=T.chords[b].split(' ').map(noteHz),bass=ch[0],tones=ch.slice(1);
+      /* 低音 */
+      synth.tone(o,at(b,0),step*3.4,bass,.34,0,VOICE.bass);
+      synth.tone(o,at(b,T.drums==='lofi'?5:4),step*2.6,bass,.26,0,VOICE.bass);
+      /* 和弦：有 arp 就分解彈，沒有就整組按下去 */
+      if(T.arp){
+        T.arp.forEach((k,s)=>{
+          if(k<0)return;
+          synth.tone(o,at(b,s),step*.9,tones[k%tones.length],.15,s%2?.35:-.35,VOICE[T.keys]);
+        });
+      }else{
+        tones.forEach((f,k)=>{
+          synth.tone(o,at(b,0)+k*.012,step*7.2,f,.13,(k-1)*.3,VOICE[T.keys]);
+          if(T.drums!=='lofi')synth.tone(o,at(b,4)+k*.012,step*3.4,f,.07,(k-1)*.3,VOICE[T.keys]);
+        });
+      }
+      /* 旋律 */
+      const mel=T.melody[b].split(' ');
+      for(let s=0;s<8;s++){
+        const tk=mel[s];
+        if(!tk||tk==='.'||tk==='-')continue;
+        let hold=1;
+        while(s+hold<8&&mel[s+hold]==='-')hold++;
+        synth.tone(o,at(b,s),step*hold*.95,noteHz(tk),.2,.12,VOICE[T.lead]);
+      }
+      /* 節奏 */
+      if(T.drums==='pop'){
+        synth.kick(o,at(b,0),.5);synth.kick(o,at(b,4),.42);
+        if(b%2)synth.kick(o,at(b,3),.26);
+        synth.hit(o,at(b,2),.11,.13,.1,false,b*8+2);synth.hit(o,at(b,6),.11,.13,.1,false,b*8+6);
+        for(let s=0;s<8;s++)synth.hit(o,at(b,s),.035,s%2?.07:.045,.3,true,b*8+s+100);
+      }else if(T.drums==='lofi'){
+        synth.kick(o,at(b,0),.46);synth.kick(o,at(b,5),.32);
+        synth.hit(o,at(b,2),.14,.12,-.1,false,b*8+2);synth.hit(o,at(b,6),.14,.12,-.1,false,b*8+6);
+        for(let s=1;s<8;s+=2)synth.hit(o,at(b,s),.04,.045,.3,true,b*8+s+100);
+      }else{
+        for(let s=0;s<8;s++)synth.hit(o,at(b,s),.06,s%2?.03:.018,s%2?.4:-.4,true,b*8+s+100);
+      }
+    }
+    /* 把峰值拉到固定的大小，三首聽起來才會差不多大聲 */
+    let peak=0;
+    for(let i=0;i<n;i++){const a=Math.abs(o.L[i]),c=Math.abs(o.R[i]);if(a>peak)peak=a;if(c>peak)peak=c;}
+    const g=peak?.8/peak:1;
+    for(let i=0;i<n;i++){o.L[i]*=g;o.R[i]*=g;}
+    const out={L:o.L,R:o.R,n,sr};
+    synth.cache.clear();synth.cache.set(id,out);
+    return out;
+  }
+};
+
+/* ============================================================
+   配樂與混音
+   ============================================================ */
+const BGM_DUCK=.32;      /* 影片有原音時，配樂壓到原本的幾成 */
+const BGM_RAMP=.35;      /* 壓低／恢復花的秒數 */
+
+/* 線性內插換取樣率。只在沒有 OfflineAudioContext 時當退路用。 */
+function resampleLinear(x,from,to){
+  if(from===to)return x;
+  const n=Math.max(1,Math.round(x.length*to/from)),out=new Float32Array(n),step=from/to;
+  for(let i=0;i<n;i++){
+    const p=i*step,k=Math.floor(p),f=p-k;
+    const a=x[Math.min(k,x.length-1)],b=x[Math.min(k+1,x.length-1)];
+    out[i]=a+(b-a)*f;
+  }
+  return out;
+}
+/* 逐塊換取樣率（取樣率跟成品不同的影片原音才會用到）。前一塊的最後一個樣本和
+   小數位置會留到下一塊，接縫才不會有喀聲。左右聲道各用一個。 */
+function makeResampler(){
+  let last=0,ph=0;
+  return function(x,from,to){
+    if(!x.length)return x;
+    const step=from/to,out=new Float32Array(Math.ceil((x.length-ph)/step)+2);
+    let n=0,p=ph;
+    while(p<x.length-1){
+      const i=Math.floor(p),f=p-i;
+      const a=i<0?last:x[i],b=x[i+1];
+      out[n++]=a+(b-a)*f;
+      p+=step;
+    }
+    ph=p-x.length;last=x[x.length-1];
+    return out.subarray(0,n);
+  };
+}
+/* 接近滿刻度時柔和地壓住，原音加配樂超過 1.0 才不會破音 */
+function softLimit(x){
+  for(let i=0;i<x.length;i++){
+    const v=x[i],a=v<0?-v:v;
+    if(a>.9){const y=.9+.1*Math.tanh((a-.9)/.1);x[i]=v<0?-y:y;}
+  }
+}
+
+const bgm={
+  fileBuf:null,fileName:'',        /* 使用者自己選的音樂（解碼後的 AudioBuffer） */
+  pcmCache:null,
+  total:0,voiced:[],               /* 成品總長、有原音的區段 [[起,迄],…] */
+  node:null,
+
+  active(){
+    if(state.bgm==='none'||!(state.bgmVol>0))return false;
+    return state.bgm==='file'?!!bgm.fileBuf:!!TRACKS[state.bgm];
+  },
+  label(){
+    if(state.bgm==='file')return bgm.fileName||'自己的音樂';
+    return TRACKS[state.bgm]?TRACKS[state.bgm].label:'無';
+  },
+
+  /* 指定取樣率的立體聲波形 {L,R,n}，會一直循環播 */
+  async pcm(sr){
+    const key=state.bgm+'@'+sr+'#'+(state.bgm==='file'?bgm.fileName:'');
+    if(bgm.pcmCache&&bgm.pcmCache.key===key)return bgm.pcmCache.p;
+    let p;
+    if(state.bgm==='file'){
+      const b=bgm.fileBuf;
+      const ch=await bgm.resample(b,sr);
+      p={L:ch[0],R:ch[1],n:ch[0].length,sr};
+      /* 檔案的頭尾接起來通常不連續，循環的接縫各淡 40ms 避免爆音 */
+      const f=Math.min(Math.round(sr*.04),p.n>>1);
+      for(let i=0;i<f;i++){
+        const g=i/f;
+        p.L[i]*=g;p.R[i]*=g;p.L[p.n-1-i]*=g;p.R[p.n-1-i]*=g;
+      }
+    }else p=synth.render(state.bgm,sr);
+    bgm.pcmCache={key,p};
+    return p;
+  },
+  async resample(buf,sr){
+    const c0=buf.getChannelData(0),c1=buf.numberOfChannels>1?buf.getChannelData(1):c0;
+    if(buf.sampleRate===sr)return [new Float32Array(c0),new Float32Array(c1)];
+    if(typeof OfflineAudioContext==='function'){
+      try{
+        const off=new OfflineAudioContext(2,Math.max(1,Math.round(buf.duration*sr)),sr);
+        const src=off.createBufferSource();
+        src.buffer=buf;src.connect(off.destination);src.start(0);
+        const out=await off.startRendering();
+        return [new Float32Array(out.getChannelData(0)),
+                new Float32Array(out.getChannelData(out.numberOfChannels>1?1:0))];
+      }catch(e){/* 改用線性內插 */}
+    }
+    return [resampleLinear(c0,buf.sampleRate,sr),resampleLinear(c1,buf.sampleRate,sr)];
+  },
+
+  /* 設定這次成品的時間軸，gainAt() 才知道哪裡要淡入淡出、哪裡要壓低 */
+  plan(total,voiced){
+    bgm.total=total;
+    const v=(voiced||[]).filter(x=>x[1]>x[0]).sort((a,b)=>a[0]-b[0]),out=[];
+    for(const x of v){
+      const l=out[out.length-1];
+      if(l&&x[0]<=l[1]+.01)l[1]=Math.max(l[1],x[1]);else out.push([x[0],x[1]]);
+    }
+    bgm.voiced=out;
+  },
+  gainAt(t){
+    const T=bgm.total||1;
+    let g=state.bgmVol;
+    g*=clamp(t/Math.min(.8,T/4),0,1);                 /* 片頭淡入 */
+    g*=clamp((T-t)/Math.min(1.5,T/3),0,1);            /* 片尾淡出 */
+    if(state.duck&&bgm.voiced.length){
+      let d=Infinity;
+      for(const [a,b] of bgm.voiced){
+        if(t>=a&&t<=b){d=0;break;}
+        d=Math.min(d,t<a?a-t:t-b);
+      }
+      g*=BGM_DUCK+(1-BGM_DUCK)*clamp(d/BGM_RAMP,0,1);
+    }
+    return g;
+  },
+  /* 把配樂疊進一塊輸出。pos 是這一塊在成品上的起始樣本位置。 */
+  mixInto(L,R,pos,sr,p){
+    const n=L.length,STEP=128;
+    for(let i=0;i<n;i+=STEP){
+      const m=Math.min(STEP,n-i);
+      const g0=bgm.gainAt((pos+i)/sr),g1=bgm.gainAt((pos+i+m)/sr);
+      let j=(pos+i)%p.n;
+      for(let k=0;k<m;k++){
+        const g=g0+(g1-g0)*k/m;
+        L[i+k]+=p.L[j]*g;R[i+k]+=p.R[j]*g;
+        if(++j>=p.n)j=0;
+      }
+    }
+  },
+
+  /* ---------- 介面：選檔、試聽 ---------- */
+  pickFile(){$('bgmPick').click();},
+  async setFile(f){
+    const AC=window.AudioContext||window.webkitAudioContext;
+    const tmp=new AC();
+    try{
+      bgm.fileBuf=await tmp.decodeAudioData(await f.arrayBuffer());
+      bgm.fileName=f.name;bgm.pcmCache=null;
+      state.bgm='file';fx.touched.bgm=true;
+      ui.toast('配樂換成「'+f.name+'」');
+    }catch(e){
+      ui.toast('這個音樂檔解不開，換一個 mp3 或 m4a 試試');
+    }finally{try{tmp.close();}catch(e){}}
+    ui.syncPills();ui.syncFx();ui.saveStyle();
+  },
+  stopAudition(){
+    if(bgm.node){try{bgm.node.stop();}catch(e){}bgm.node=null;}
+    const b=$('bgmTry');if(b)b.textContent='試聽';
+  },
+  async audition(){
+    if(bgm.node){bgm.stopAudition();return;}
+    if(state.bgm==='none'||(state.bgm==='file'&&!bgm.fileBuf)){ui.toast('先選一首配樂');return;}
+    const ac=engine.audio();
+    const p=await bgm.pcm(ac.sampleRate);
+    const buf=ac.createBuffer(2,p.n,ac.sampleRate);
+    buf.copyToChannel(p.L,0);buf.copyToChannel(p.R,1);
+    const src=ac.createBufferSource(),g=ac.createGain();
+    src.buffer=buf;src.loop=true;g.gain.value=Math.max(.05,state.bgmVol);
+    src.connect(g);g.connect(ac.destination);
+    src.start();bgm.node=src;
+    $('bgmTry').textContent='停止試聽';
+    setTimeout(()=>{if(bgm.node===src)bgm.stopAudition();},20000);
+  }
+};
+
+/* 混音模式的聲音出口：各段原音調成同一個規格、疊上配樂，一塊一塊交給編碼器。
+   已送出的樣本數就是聲音在成品時間軸上的位置；每段結束時會補齊或截斷到
+   剛好等於那一段影像的長度，音畫才不會越走越偏。 */
+function makeMixer(asrc,sr,music){
+  const BLOCK=Math.round(sr/2);
+  const m={
+    sr,pos:0,fill:0,L:new Float32Array(BLOCK),R:new Float32Array(BLOCK),
+    at(){return m.pos+m.fill;},
+    async flush(){
+      if(!m.fill)return;
+      const L=m.L.subarray(0,m.fill),R=m.R.subarray(0,m.fill);
+      if(music)bgm.mixInto(L,R,m.pos,sr,music);
+      softLimit(L);softLimit(R);
+      const buf=new AudioBuffer({length:m.fill,sampleRate:sr,numberOfChannels:2});
+      buf.copyToChannel(L,0);buf.copyToChannel(R,1);
+      await asrc.add(buf);
+      m.pos+=m.fill;m.fill=0;m.L.fill(0);m.R.fill(0);
+    },
+    /* 寫入 n 個樣本；l 為 null 表示靜音（之後還是會疊上配樂） */
+    async write(l,r,n,gain){
+      let i=0;
+      while(i<n){
+        const k=Math.min(n-i,BLOCK-m.fill);
+        if(l){
+          const rr=r||l;
+          for(let q=0;q<k;q++){m.L[m.fill+q]=l[i+q]*gain;m.R[m.fill+q]=rr[i+q]*gain;}
+        }
+        m.fill+=k;i+=k;
+        if(m.fill>=BLOCK)await m.flush();
+      }
+    }
+  };
+  return m;
+}
+
+/* ============================================================
    播放與匯出引擎
    ============================================================ */
 const engine={
   running:false,cancel:false,lastTime:0,raf:0,
-  actx:null,recDest:null,monitor:null,wake:null,
+  actx:null,recDest:null,monitor:null,orig:null,wake:null,
+  bgmSrc:null,bgmGain:null,
 
   outSize(){
     const first=state.clips.find(c=>c.w&&c.h);
@@ -614,6 +1854,10 @@ const engine={
       engine.recDest=engine.actx.createMediaStreamDestination();
       engine.monitor=engine.actx.createGain();
       engine.monitor.connect(engine.actx.destination);
+      /* 影片原音先過這個音量，再分給錄製端和喇叭 */
+      engine.orig=engine.actx.createGain();
+      engine.orig.connect(engine.recDest);
+      engine.orig.connect(engine.monitor);
     }
     if(engine.actx.state==='suspended')engine.actx.resume();
     return engine.actx;
@@ -623,31 +1867,60 @@ const engine={
     if(!c.node){
       try{
         c.node=engine.actx.createMediaElementSource(v);
-        c.node.connect(engine.recDest);
-        c.node.connect(engine.monitor);
+        c.node.connect(engine.orig);
       }catch(e){/* 已連過就略過 */}
     }
     return v;
   },
 
-  draw(ctx,v,W,H,t){
-    ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
-    const vw=v.videoWidth||16,vh=v.videoHeight||9;
-    if(vw&&vh){
-      const s=state.fit==='cover'?Math.max(W/vw,H/vh):Math.min(W/vw,H/vh);
-      const w=vw*s,h=vh*s;
-      try{ctx.drawImage(v,(W-w)/2,(H-h)/2,w,h);}catch(e){}
+  /* 預覽與即時錄製時的配樂：整首循環播，音量照 bgm.gainAt() 的曲線走 */
+  async startBgm(total){
+    if(!bgm.active())return;
+    try{
+      const ac=engine.actx,p=await bgm.pcm(ac.sampleRate);
+      const buf=ac.createBuffer(2,p.n,ac.sampleRate);
+      buf.copyToChannel(p.L,0);buf.copyToChannel(p.R,1);
+      const src=ac.createBufferSource(),g=ac.createGain();
+      src.buffer=buf;src.loop=true;
+      const N=Math.max(2,Math.ceil(total*20)),curve=new Float32Array(N+1);
+      for(let k=0;k<=N;k++)curve[k]=bgm.gainAt(total*k/N);
+      g.gain.setValueCurveAtTime(curve,ac.currentTime,total);
+      src.connect(g);g.connect(engine.recDest);g.connect(engine.monitor);
+      src.start();
+      engine.bgmSrc=src;engine.bgmGain=g;
+    }catch(e){dbg.add('預覽配樂播不出來：'+e.message);}
+  },
+  stopBgm(){
+    if(engine.bgmSrc){try{engine.bgmSrc.stop();}catch(e){}}
+    if(engine.bgmGain){try{engine.bgmGain.disconnect();}catch(e){}}
+    engine.bgmSrc=null;engine.bgmGain=null;
+  },
+
+  /* 畫一格。src 是 <video> 或照片的工作圖；o 見 fx.finish()。 */
+  draw(ctx,cv,src,W,H,o,c,kind){
+    if(isPhoto(c)){
+      fx.paint(ctx,W,H,c.w,c.h,(x,fit,w,h,bg)=>
+        fx.drawPhoto(x,src,w,h,bg?0:o.tl/o.len,bg?'none':kind,fit));
+    }else{
+      const vw=src.videoWidth||16,vh=src.videoHeight||9;
+      fx.paint(ctx,W,H,vw,vh,(x,fit,w,h)=>{
+        const s=fit==='cover'?Math.max(w/vw,h/vh):Math.min(w/vw,h/vh);
+        try{x.drawImage(src,(w-vw*s)/2,(h-vh*s)/2,vw*s,vh*s);}catch(e){}
+      });
     }
-    const act=subs.activeAt(t);
+    fx.finish(ctx,cv,W,H,o);
+    const act=subs.activeAt(o.t);
     if(act.length)drawSubtitle(ctx,act.map(a=>a.text).join(' '),W,H);
   },
 
   async run({record}){
     if(engine.running)return;
-    if(!state.clips.length){ui.toast('先加入影片');return;}
-    if(state.clips.some(c=>!c.ready)){ui.toast('影片還在讀取，等一下');return;}
+    if(!state.clips.length){ui.toast('先加入照片或影片');return;}
+    if(state.clips.some(c=>c.err)){ui.toast('有素材讀不到，先把它移除');return;}
+    if(state.clips.some(c=>!c.ready)){ui.toast('素材還在讀取，等一下');return;}
 
     engine.running=true;engine.cancel=false;
+    bgm.stopAudition();
     const canvas=$('stage'),{w:W,h:H}=engine.outSize();
     canvas.width=W;canvas.height=H;
     canvas.style.aspectRatio=W+'/'+H;
@@ -656,15 +1929,21 @@ const engine={
 
     engine.audio();
     engine.monitor.gain.value=(record&&$('muteMonitor').checked)?0:1;
+    engine.orig.gain.value=state.origVol;
 
-    const total=totalLen();
+    const total=totalLen(),n=state.clips.length;
     let rec=null,chunks=[],mime='';
+    /* 預覽時不知道影片有沒有聲音軌，一律當作有 */
+    bgm.plan(total,state.origVol>0
+      ?state.clips.map((c,i)=>isPhoto(c)?null:[clipOffset(i),clipOffset(i)+clipLen(c)]).filter(Boolean):[]);
+    fx.reset();
 
     ui.setDock();
     try{
       /* 先把每段都定位好，減少接點空白 */
       ui.expStatus(record?'準備中…':'預覽準備中…');
       for(const c of state.clips){
+        if(isPhoto(c))continue;
         const v=engine.hook(c);
         if(v.readyState<1){v.load();await Promise.race([once(v,'loadedmetadata'),new Promise(r=>setTimeout(r,6000))]);}
         if(Math.abs(v.currentTime-c.trimStart)>.05){
@@ -672,6 +1951,8 @@ const engine={
           await Promise.race([once(v,'seeked'),new Promise(r=>setTimeout(r,5000))]);
         }
       }
+      const firstPhoto=state.clips.find(isPhoto);
+      if(firstPhoto&&state.clips[0]===firstPhoto)await photo.work(firstPhoto,W,H);
 
       if(record){
         try{if('wakeLock'in navigator)engine.wake=await navigator.wakeLock.request('screen');}catch(e){}
@@ -687,29 +1968,56 @@ const engine={
         rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
         rec.start(1000);
       }
+      await engine.startBgm(total);
 
       let base=0;
-      for(let i=0;i<state.clips.length&&!engine.cancel;i++){
-        const c=state.clips[i],v=engine.hook(c);
-        if(Math.abs(v.currentTime-c.trimStart)>.15){
-          v.currentTime=c.trimStart;
-          await Promise.race([once(v,'seeked'),new Promise(r=>setTimeout(r,3000))]);
-        }
-        try{await v.play();}catch(e){throw new Error('無法播放第 '+(i+1)+' 段（瀏覽器擋住了自動播放）');}
+      for(let i=0;i<n&&!engine.cancel;i++){
+        const c=state.clips[i],len=clipLen(c);
+        fx.next();
+        /* 下一張照片先解好，換段時才不會頓 */
+        const nx=state.clips[i+1];
+        if(nx&&isPhoto(nx))photo.work(nx,W,H).catch(()=>{});
 
-        await new Promise(done=>{
-          const step=()=>{
-            if(engine.cancel){v.pause();done();return;}
-            const t=base+(v.currentTime-c.trimStart);
-            engine.lastTime=t;
-            engine.draw(ctx,v,W,H,t);
-            ui.progress(record?'expBar':null,t/total,record,t,total);
-            if(v.currentTime>=c.trimEnd-1/FPS||v.ended){v.pause();done();return;}
+        if(isPhoto(c)){
+          let img;
+          try{img=await photo.work(c,W,H);}
+          catch(e){throw new Error('第 '+(i+1)+' 段「'+c.name+'」這張照片解不開');}
+          const kind=fx.motionOf(c,i);
+          await new Promise(done=>{
+            const t0=performance.now();
+            const step=()=>{
+              if(engine.cancel){done();return;}
+              const tl=Math.min(len,(performance.now()-t0)/1000),t=base+tl;
+              engine.lastTime=t;
+              engine.draw(ctx,canvas,img,W,H,{i,n,tl,len,t,total},c,kind);
+              ui.progress(record?'expBar':null,t/total,record,t,total);
+              if(tl>=len){done();return;}
+              engine.raf=requestAnimationFrame(step);
+            };
             engine.raf=requestAnimationFrame(step);
-          };
-          engine.raf=requestAnimationFrame(step);
-        });
-        base+=clipLen(c);
+          });
+        }else{
+          const v=engine.hook(c);
+          if(Math.abs(v.currentTime-c.trimStart)>.15){
+            v.currentTime=c.trimStart;
+            await Promise.race([once(v,'seeked'),new Promise(r=>setTimeout(r,3000))]);
+          }
+          try{await v.play();}catch(e){throw new Error('無法播放第 '+(i+1)+' 段（瀏覽器擋住了自動播放）');}
+
+          await new Promise(done=>{
+            const step=()=>{
+              if(engine.cancel){v.pause();done();return;}
+              const tl=Math.max(0,v.currentTime-c.trimStart),t=base+tl;
+              engine.lastTime=t;
+              engine.draw(ctx,canvas,v,W,H,{i,n,tl,len,t,total},c);
+              ui.progress(record?'expBar':null,t/total,record,t,total);
+              if(v.currentTime>=c.trimEnd-1/FPS||v.ended){v.pause();done();return;}
+              engine.raf=requestAnimationFrame(step);
+            };
+            engine.raf=requestAnimationFrame(step);
+          });
+        }
+        base+=len;
       }
 
       if(rec){
@@ -729,6 +2037,7 @@ const engine={
       ui.expStatus('出問題了：'+err.message,'err');
     }finally{
       cancelAnimationFrame(engine.raf);
+      engine.stopBgm();
       state.clips.forEach(c=>{if(c.vid)c.vid.pause();});
       if(engine.wake){try{engine.wake.release();}catch(e){}engine.wake=null;}
       engine.running=false;engine.cancel=false;
@@ -877,7 +2186,7 @@ const asr={
 
   async run(){
     if(asr.busy)return;
-    if(!state.clips.length){ui.toast('先加入影片');return;}
+    if(!state.clips.some(c=>!isPhoto(c)&&c.ready)){ui.toast('沒有影片可以聽打。照片的字幕請用上面的「字幕草稿」');return;}
     const model=$('asrModel').value,lang=$('asrLang').value;
     const btn=$('asrBtn');
     asr.busy=true;asr.aborted=false;
@@ -896,6 +2205,7 @@ const asr={
       for(let i=0;i<state.clips.length;i++){
         if(asr.aborted)break;
         const c=state.clips[i],n=state.clips.length;
+        if(isPhoto(c)||!c.ready)continue;
         asr.say(`第 ${i+1}/${n} 段：取出聲音…`,i/n);
         let pcmData;
         try{pcmData=await asr.pcm(c.file,c.trimStart,c.trimEnd);}
@@ -910,17 +2220,20 @@ const asr={
           const txt=(q.text||'').trim();if(!txt)continue;
           const st=(q.timestamp&&q.timestamp[0])||0;
           const en=(q.timestamp&&q.timestamp[1])||st+2;
-          fresh.push({id:++uid,start:off+st,end:off+Math.max(en,st+.6),text:txt,sel:false});
+          /* 記下它在原始影片裡的時間，之後片段換順序或重新裁切，字幕會跟著走 */
+          fresh.push({id:++uid,start:off+st,end:off+Math.max(en,st+.6),text:txt,sel:false,
+            clip:c.id,ms:c.trimStart+st,me:c.trimStart+Math.max(en,st+.6),auto:'asr'});
         }
       }
 
       if(!fresh.length){
         asr.say(asr.aborted?'已停止，沒有取得任何字幕。':'沒有辨識到內容，可能是聲音太小或沒有人聲。');
       }else{
-        if(state.subs.length&&confirm('已有 '+state.subs.length+' 句字幕，要換成這次辨識的結果嗎？（取消＝合併）'))
-          state.subs=fresh;
-        else state.subs=state.subs.concat(fresh);
-        subs.sort();ui.renderSubs();ui.renderStrip();
+        /* 這次聽到內容的影片，把它原本的草稿和上一次的聽打結果換掉；
+           其他字幕（照片草稿、手動加的、匯入的）都留著 */
+        const heard=new Set(fresh.map(s=>s.clip));
+        state.subs=state.subs.filter(s=>!(heard.has(s.clip)&&(s.auto==='draft'||s.auto==='asr'))).concat(fresh);
+        subs.relink();subs.touch();ui.renderSubs();ui.renderStrip();
         asr.say((asr.aborted?'已停止，先收下 ':'辨識完成，共 ')+fresh.length+' 句。',1);
       }
     }catch(e){
@@ -928,7 +2241,7 @@ const asr={
     }finally{
       if(wake){try{wake.release();}catch(e){}}
       asr.busy=false;asr.aborted=false;
-      btn.textContent='開始辨識全部片段';btn.classList.remove('danger');
+      btn.textContent='開始辨識全部影片';btn.classList.remove('danger');
     }
   }
 };
@@ -1054,7 +2367,7 @@ async function decodeClipAudio(file,from,to){
 }
 
 const xport={
-  busy:false,cancel:false,wake:null,ranMode:'',
+  busy:false,cancel:false,wake:null,ranMode:'',skipFx:false,
 
   stop(){xport.cancel=true;engine.cancel=true;dbg.add('使用者按下停止');},
 
@@ -1070,6 +2383,10 @@ const xport={
       }catch(e){
         dbg.add(`開啟 [${i+1}] 讀不到內容：${e.name||''} ${e.message}`);
         throw new Error(`讀不到第 ${i+1} 段「${c.name}」的內容。這個檔案多半不在手機本機（例如從 Google 相簿、OneDrive 之類的雲端選的），要先下載成本機檔案再選一次`);
+      }
+      if(isPhoto(c)){
+        out.push({clip:c,photo:true,input:null,vt:null,at:null,vcfg:null,acfg:null});
+        continue;
       }
       try{
         const input=new lib.Input({formats:lib.ALL_FORMATS,source:new lib.BlobSource(c.file)});
@@ -1096,6 +2413,11 @@ const xport={
     dbg.add('--- 素材檢查（共 '+list.length+' 段）---');
     for(let i=0;i<list.length;i++){
       const it=list[i],c=it.clip;
+      if(it.photo){
+        dbg.add(`[${i+1}] ${c.name}`);
+        dbg.add(`    照片 ${c.w}x${c.h}  ${(c.file.size/1048576).toFixed(1)}MB  顯示 ${clipLen(c).toFixed(2)}s`);
+        continue;
+      }
       let fps='?';
       try{fps=(await it.vt.computeFrameRateMetrics()).bestGuessFrameRate;}catch(e){}
       let rot=0;try{rot=await it.vt.getRotation();}catch(e){}
@@ -1173,6 +2495,7 @@ const xport={
   },
 
   checkCompat(list){
+    if(list.some(x=>x.photo))return '有照片，照片要重新編碼才能變成影片';
     const a=list[0];
     for(let i=1;i<list.length;i++){
       const b=list[i];
@@ -1251,10 +2574,16 @@ const xport={
   },
 
   /* ---------- 模式二：重新編碼，字幕燒進畫面 ---------- */
-  /* 影像要重編所以非解碼不可，但聲音不用。只要各段聲音規格一致，
-     就直接把原始封包搬過去，完全不碰解碼器，也不會有二次壓縮。 */
+  /* 影像要重編所以非解碼不可，但聲音不一定。四種處理方式：
+       none    完全沒有聲音（沒有原音也沒有配樂）
+       copy    全部是影片、聲音規格一致、沒有配樂：直接搬原始封包，不碰解碼器
+       decode  全部是影片但聲音規格不一致：解碼後重編
+       mix     有配樂、有照片，或調過原音音量：解碼後跟配樂混在一起再編碼 */
   audioPlan(list){
-    if(!list.some(x=>x.at))return 'none';
+    const voice=list.some(x=>x.at)&&state.origVol>0;
+    if(bgm.active())return 'mix';
+    if(!voice)return 'none';
+    if(list.some(x=>x.photo)||state.origVol!==1)return 'mix';
     if(!list.every(x=>x.at&&x.acfg))return 'decode';
     const a=list[0].acfg;
     for(const it of list){
@@ -1335,6 +2664,90 @@ const xport={
     dbg.add(`[${i+1}] 補 ${len.toFixed(2)}s 靜音（${sr}Hz / ${ch}ch）`);
   },
 
+  /* 混音模式下處理一段素材的聲音：把原音（照片沒有原音）寫進混音器，
+     不足的部分補靜音，配樂由混音器統一疊上去。
+     每一塊都照它自己的時間戳擺位置，而不是一塊接一塊往後排，
+     所以音軌中間有缺口、或解碼器多吐少吐一點，都不會讓後面整段偏掉。 */
+  async mixClipAudio(lib,it,i,au,base,len){
+    const c=it.clip,mx=au.mx,sr=mx.sr;
+    const start=mx.at(),end=Math.round((base+len)*sr);
+    const room=()=>end-mx.at();
+    const rsL=makeResampler(),rsR=makeResampler();
+    let got=0;
+
+    /* buf：解碼出來的一塊聲音，ts：它在原始影片裡的時間 */
+    const feed=async(buf,ts)=>{
+      const bsr=buf.sampleRate;
+      let l=buf.getChannelData(0),r=buf.numberOfChannels>1?buf.getChannelData(1):null;
+      const want=ts-c.trimStart,have=(mx.at()-start)/sr;
+      if(want>have+.003){
+        await mx.write(null,null,Math.min(room(),Math.round((want-have)*sr)),0);   /* 缺口補靜音 */
+      }else if(want<have-.003){
+        const skip=Math.round((have-want)*bsr);                                    /* 重疊的部分切掉 */
+        if(skip>=l.length)return;
+        l=l.subarray(skip);if(r)r=r.subarray(skip);
+      }
+      if(bsr!==sr){l=rsL(l,bsr,sr);if(r)r=rsR(r,bsr,sr);}
+      const k=Math.min(l.length,room());
+      if(k>0){await mx.write(l,r,k,state.origVol);got+=k;}
+    };
+
+    if(it.at&&state.origVol>0){
+      try{
+        let n=0;
+        const asink=new lib.AudioSampleSink(it.at);
+        for await (const sa of asink.samples(c.trimStart,c.trimEnd)){
+          if(xport.cancel){sa.close();throw new Error('已取消');}
+          const buf=sa.toAudioBuffer(),ts=sa.timestamp;
+          sa.close();
+          if(room()>0)await feed(buf,ts);
+          n++;
+        }
+        dbg.add(`[${i+1}] 原音混入 ${n} 塊（${(got/sr).toFixed(2)}s）`);
+      }catch(e){
+        if(xport.cancel)throw e;
+        dbg.add(`[${i+1}] WebCodecs 解不了聲音（${e.name||''} ${e.message}）`+(got?'，剩下的補靜音':'，改用 Web Audio'));
+        if(!got){
+          try{
+            const buf=await decodeClipAudio(c.file,c.trimStart,c.trimEnd);
+            await feed(buf,c.trimStart);
+            dbg.add(`[${i+1}] Web Audio 退路成功，${buf.duration.toFixed(2)}s / ${buf.sampleRate}Hz / ${buf.numberOfChannels}ch`);
+          }catch(e2){
+            dbg.add(`[${i+1}] Web Audio 也失敗（${e2.message}），這段原音補靜音`);
+          }
+        }
+      }
+    }
+    const pad=room();
+    if(pad>0)await mx.write(null,null,pad,0);
+    if(it.photo)dbg.add(`[${i+1}] 照片，聲音 ${(len).toFixed(2)}s`+(bgm.active()?'（只有配樂）':'（靜音）'));
+    else if(pad>sr*.05&&it.at&&state.origVol>0)dbg.add(`[${i+1}] 原音比影像短，補了 ${(pad/sr).toFixed(2)}s 靜音`);
+  },
+
+  /* 一張照片 → 固定幀率的畫面。動態、轉場、字幕都在這裡逐格畫上去。 */
+  async photoFrames(it,i,n,base,len,total,ctx,canvas,W,H,vsrc,fps){
+    const c=it.clip;
+    let img;
+    try{img=await photo.work(c,W,H);}
+    catch(e){throw new Error(`第 ${i+1} 段「${c.name}」這張照片解不開`);}
+    const kind=fx.motionOf(c,i);
+    const frames=Math.max(1,Math.round(len*fps));
+    const tStart=performance.now();
+    for(let k=0;k<frames;k++){
+      if(xport.cancel)throw new Error('已取消');
+      const tl=k/fps,t=base+tl;
+      fx.paint(ctx,W,H,c.w,c.h,(x,fit,w,h,bg)=>
+        fx.drawPhoto(x,img,w,h,bg?0:tl/len,bg?'none':kind,fit));
+      fx.finish(ctx,canvas,W,H,{i,n,tl,len,t,total});
+      const act=subs.activeAt(t);
+      if(act.length)drawSubtitle(ctx,act.map(x=>x.text).join(' '),W,H);
+      await vsrc.add(t,1/fps);
+      if((k&15)===0){xport.progress(t/total,'重新編碼中');await new Promise(r=>setTimeout(r,0));}
+    }
+    const took=(performance.now()-tStart)/1000;
+    dbg.add(`[${i+1}] 照片完成 ${frames} 格（動態：${kind}），耗時 ${took.toFixed(1)}s`);
+  },
+
   async encode(lib,list,dest){
     const {w:W,h:H}=engine.outSize();
     const canvas=$('stage');
@@ -1349,11 +2762,13 @@ const xport={
     const bitrate=state.res>=1080?10e6:6e6;
     const cap=state.fps||0;
     dbg.add(`重新編碼 ${W}x${H}，編碼器 ${vcodec}，位元率 ${(bitrate/1e6).toFixed(0)}Mbps，輸出幀率 ${cap?cap+'fps':'照原始'}`);
+    dbg.add(`效果：照片動態=${state.motion}　轉場=${state.trans}　色調=${state.look}　比例不合=${state.fit}`);
     const vsrc=new lib.CanvasSource(canvas,{
       codec:vcodec,quality:new lib.Quality({bitrate}),keyFrameInterval:2
     });
     out.addVideoTrack(vsrc);
 
+    const total=totalLen(),n=list.length;
     const plan=xport.audioPlan(list);
     let au=null;
     if(plan==='copy'){
@@ -1376,22 +2791,59 @@ const xport={
             mode:'decode',first:true,base:0,sr,ch};
         out.addAudioTrack(au.src);
       }
-    }else dbg.add('所有片段都沒有聲音軌');
+    }else if(plan==='mix'){
+      const acodec=await lib.getFirstEncodableAudioCodec(format.getSupportedAudioCodecs());
+      if(!acodec)dbg.add('聲音處理方式：需要混音，但這台裝置沒有可用的聲音編碼器，成品不會有聲音');
+      else{
+        const ref=list.find(x=>x.acfg);
+        const sr=(ref&&(ref.acfg.sampleRate===44100||ref.acfg.sampleRate===48000))?ref.acfg.sampleRate:48000;
+        let music=null;
+        if(bgm.active()){
+          try{music=await bgm.pcm(sr);}
+          catch(e){dbg.add('配樂準備失敗（'+e.message+'），這次不加配樂');}
+        }
+        /* 影片有原音的區段，配樂要壓低 */
+        const voiced=[];let t=0;
+        for(const it of list){
+          const len=clipLen(it.clip);
+          if(it.at&&state.origVol>0)voiced.push([t,t+len]);
+          t+=len;
+        }
+        bgm.plan(total,voiced);
+        const src=new lib.AudioBufferSource({codec:acodec,quality:new lib.Quality('high')});
+        out.addAudioTrack(src);
+        au={src,mode:'mix',mx:makeMixer(src,sr,music)};
+        dbg.add(`聲音處理方式：混音（${acodec}，${sr}Hz 立體聲）`
+          +(music?`，配樂「${bgm.label()}」音量 ${Math.round(state.bgmVol*100)}%`:'，沒有配樂')
+          +`，原音音量 ${Math.round(state.origVol*100)}%`);
+      }
+    }else dbg.add('成品不會有聲音軌（沒有原音，也沒有配樂）');
     await out.start();
 
-    const total=totalLen();
+    const fps=cap||FPS;
     let base=0;
+    fx.reset();
 
-    for(let i=0;i<list.length;i++){
+    for(let i=0;i<n;i++){
       if(xport.cancel)throw new Error('已取消');
       const it=list[i],c=it.clip,len=clipLen(c);
 
-      if(au)au.base=base;
-      await xport.addClipAudio(lib,it,i,au);
+      if(au&&au.mode==='mix')await xport.mixClipAudio(lib,it,i,au,base,len);
+      else{
+        if(au)au.base=base;
+        await xport.addClipAudio(lib,it,i,au);
+      }
+
+      fx.next();
+      if(it.photo){
+        await xport.photoFrames(it,i,n,base,len,total,ctx,canvas,W,H,vsrc,fps);
+        base+=len;
+        continue;
+      }
 
       dbg.add(`[${i+1}] 開始解碼影像 ${c.trimStart.toFixed(2)}s→${c.trimEnd.toFixed(2)}s，輸出位移 ${base.toFixed(2)}s`);
       const tStart=performance.now();
-      let n=0,skipped=0,over=0,lastT=0,lastSlot=-1;
+      let fn=0,skipped=0,over=0,lastT=0,lastSlot=-1;
       const vsink=new lib.VideoSampleSink(it.vt);
       try{
         for await (const sample of vsink.samples(c.trimStart,c.trimEnd)){
@@ -1399,31 +2851,34 @@ const xport={
           /* samples() 可能多吐一格超過 trimEnd 的畫面，放行的話會和下一段
              的時間戳重疊，mediabunny 會直接拒收整個輸出 */
           if(sample.timestamp>=c.trimEnd){sample.close();over++;continue;}
-          const t=base+Math.max(0,sample.timestamp-c.trimStart);
+          const tl=Math.max(0,sample.timestamp-c.trimStart),t=base+tl;
           if(cap){
             const slot=Math.floor((t+1e-6)*cap);
             if(slot===lastSlot){sample.close();skipped++;continue;}
             lastSlot=slot;
           }
-          ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
-          try{sample.drawWithFit(ctx,{fit:state.fit==='cover'?'cover':'contain'});}
-          catch(e){dbg.add(`[${i+1}] 第 ${n} 格畫不出來：${e.message}`);}
+          fx.paint(ctx,W,H,c.w,c.h,(x,fit)=>{
+            try{sample.drawWithFit(x,{fit});}
+            catch(e){dbg.add(`[${i+1}] 第 ${fn} 格畫不出來：${e.message}`);}
+          });
+          fx.finish(ctx,canvas,W,H,{i,n,tl,len,t,total});
           const act=subs.activeAt(t);
           if(act.length)drawSubtitle(ctx,act.map(x=>x.text).join(' '),W,H);
           await vsrc.add(t,cap?1/cap:(sample.duration||1/FPS));
           sample.close();
-          n++;lastT=t;
-          if((n&15)===0){xport.progress(t/total,'重新編碼中');await new Promise(r=>setTimeout(r,0));}
+          fn++;lastT=t;
+          if((fn&15)===0){xport.progress(t/total,'重新編碼中');await new Promise(r=>setTimeout(r,0));}
         }
       }catch(e){
-        dbg.add(`[${i+1}] 影像在第 ${n} 格（約 ${lastT.toFixed(2)}s）中斷：${e.name||''} ${e.message}`);
+        dbg.add(`[${i+1}] 影像在第 ${fn} 格（約 ${lastT.toFixed(2)}s）中斷：${e.name||''} ${e.message}`);
         throw e;
       }
       const took=(performance.now()-tStart)/1000;
-      dbg.add(`[${i+1}] 影像完成 ${n} 格${skipped?('，降幀跳過 '+skipped+' 格'):''}${over?('，超出裁切範圍丟棄 '+over+' 格'):''}，耗時 ${took.toFixed(1)}s（${(len/took).toFixed(2)} 倍速）`);
+      dbg.add(`[${i+1}] 影像完成 ${fn} 格${skipped?('，降幀跳過 '+skipped+' 格'):''}${over?('，超出裁切範圍丟棄 '+over+' 格'):''}，耗時 ${took.toFixed(1)}s（${(len/took).toFixed(2)} 倍速）`);
       base+=len;
     }
 
+    if(au&&au.mx)await au.mx.flush();
     vsrc.close();if(au&&au.src)au.src.close();
     dbg.add('編碼完成，收尾中…');
     await out.finalize();
@@ -1440,8 +2895,9 @@ const xport={
 
   async run(){
     if(xport.busy||engine.running)return;
-    if(!state.clips.length){ui.toast('先加入影片');return;}
-    if(state.clips.some(c=>!c.ready)){ui.toast('影片還在讀取，等一下');return;}
+    if(!state.clips.length){ui.toast('先加入照片或影片');return;}
+    if(state.clips.some(c=>c.err)){ui.toast('有素材讀不到，先把它移除');return;}
+    if(state.clips.some(c=>!c.ready)){ui.toast('素材還在讀取，等一下');return;}
 
     if(state.mode==='record'){engine.run({record:true});return;}
     if(!mb.supported()){
@@ -1449,14 +2905,15 @@ const xport={
       state.mode='record';ui.syncModePills();return;
     }
 
-    xport.busy=true;xport.cancel=false;xport.ranMode='';
+    xport.busy=true;xport.cancel=false;xport.ranMode='';xport.skipFx=false;
+    bgm.stopAudition();
     $('result').hidden=true;
     dbg.reset();
     ui.setDock();
     const t0=performance.now();
     try{
       await dbg.env();
-      dbg.add('選擇的模式：'+state.mode+'，片段 '+state.clips.length+' 段，總長 '+totalLen().toFixed(1)+'s');
+      dbg.add('選擇的模式：'+state.mode+'，素材 '+state.clips.length+' 段（照片 '+state.clips.filter(isPhoto).length+' 張），總長 '+totalLen().toFixed(1)+'s');
       const inMB=state.clips.reduce((a,c)=>a+(c.file.size||0),0)/1048576;
       dbg.add('素材總大小 '+inMB.toFixed(1)+'MB');
       if(totalLen()>600)dbg.add('注意：成品超過 10 分鐘。快速接片只受儲存空間限制；重新編碼會跑很久');
@@ -1467,13 +2924,15 @@ const xport={
       dbg.add('mediabunny 已載入');
       const list=await xport.openAll(lib);
 
-      let mode=state.mode;
+      let mode=state.mode,why=null;
       if(mode==='fast'){
-        const why=xport.checkCompat(list);
+        why=xport.checkCompat(list);
         dbg.add('相容性檢查：'+(why||'通過，可以免重新編碼'));
         if(why)mode='encode';
       }
       xport.ranMode=mode;
+      xport.skipFx=mode==='fast'&&fx.any();
+      if(xport.skipFx)dbg.add('注意：快速接片不重新編碼，轉場、色調、配樂與原音音量這次都不會套用');
 
       const problems=await xport.preflight(lib,list,mode);
       if(problems.length){
@@ -1482,7 +2941,7 @@ const xport={
       }
       dbg.add('=== 實際使用模式：'+(mode==='fast'?'快速接片':'重新編碼')+' ===');
       if(mode==='encode'&&state.mode==='fast')
-        ui.expStatus('片段規格不一致，改用重新編碼。','warn');
+        ui.expStatus((why||'片段規格不一致')+'，改用重新編碼。','warn');
 
       await xport.checkSpace(mode,inMB);
       const dest=await xport.makeTarget(lib);
@@ -1498,6 +2957,7 @@ const xport={
       if(realLen>0)msg+='（影片長 '+fmt(realLen)+'，約 '+(realLen/secs).toFixed(1)+' 倍速）';
       if(mode==='fast'){
         msg+='。字幕沒有燒進畫面，記得另外下載 SRT。';
+        if(xport.skipFx)msg+='　效果和配樂沒有套用，要套用請改選「重新編碼」。';
         if(res.snapped){
           msg+='　有 '+res.snapped+' 段的起點被移到最近的關鍵影格，成品比預期長 '
             +(realLen-total).toFixed(1)+' 秒';
@@ -1522,17 +2982,100 @@ const xport={
 };
 
 /* ============================================================
+   字幕確認：轉檔前的最後一關
+   ------------------------------------------------------------
+   只要字幕在上次確認之後有變動（自動產生、聽打、匯入、手改），
+   按下匯出就會先停在這裡，把每一句連同它出現時的畫面列出來。
+   使用者按下確認才會真的開始轉檔。
+   ============================================================ */
+const review={
+  next:null,
+  open(next){
+    review.next=next||null;
+    $('reviewGo').textContent=next?'確認，開始轉檔':'確認字幕';
+    review.render();
+    $('review').hidden=false;
+    document.body.style.overflow='hidden';
+    $('reviewList').parentNode.scrollTop=0;
+  },
+  close(){
+    $('review').hidden=true;
+    document.body.style.overflow='';
+    review.next=null;
+    ui.renderSubs();ui.renderStrip();
+  },
+  render(){
+    const list=state.subs;
+    const blank=list.filter(s=>!s.off&&!(s.text||'').trim()).length;
+    $('reviewInfo').textContent='共 '+list.length+' 句。這些字會直接燒進畫面，轉檔之後就不能改了，請逐句看過。'
+      +(blank?'有 '+blank+' 句是空白的，空白的句子不會顯示。':'');
+    $('reviewList').innerHTML=list.length?list.map(s=>`<div class="rv${s.off?' off':''}">
+      ${ui.thumbAt(s.start,'lg')}
+      <div class="grow">
+        <div class="t">${fmt(s.start)} – ${fmt(s.end)}${s.off?'　已被裁掉，不會出現':''}${s.auto==='draft'&&!s.edited?'　草稿':''}</div>
+        <textarea rows="2" oninput="subs.update(${s.id},'text',this.value)" placeholder="這一句要寫什麼？留白就不顯示">${esc(s.text)}</textarea>
+      </div>
+      <button class="icon" onclick="review.remove(${s.id})" aria-label="刪除這一句">✕</button>
+    </div>`).join(''):'<p class="muted" style="margin:14px 0">沒有字幕，成品不會有字。</p>';
+  },
+  remove(id){
+    state.subs=state.subs.filter(s=>s.id!==id);
+    subs.touch();review.render();
+  },
+  confirm(){
+    const next=review.next;
+    state.subsOk=true;
+    review.close();
+    ui.syncConfirm();
+    if(next)next();
+  }
+};
+
+/* ============================================================
+   快速成片：排序 → 套預設效果 → 寫字幕草稿 → 確認字幕 → 轉檔
+   ============================================================ */
+const quick={
+  busy:false,
+  async run(){
+    if(quick.busy||draft.busy||xport.busy||engine.running)return;
+    if(!state.clips.length){ui.toast('先加入照片或影片');return;}
+    if(state.clips.some(c=>c.err)){ui.toast('有素材讀不到，先把它移除');return;}
+    if(state.clips.some(c=>!c.ready)){ui.toast('素材還在讀取，等一下');return;}
+    quick.busy=true;ui.syncDraft();
+    try{
+      if($('quickSort').checked)clips.sortByTime(false);
+      fx.preset();
+      if(state.mode==='fast'){
+        state.mode=mb.supported()?'encode':'record';
+        ui.syncPills();ui.syncModePills();ui.saveStyle();
+      }
+      if(!await draft.run())return;
+      ui.tab('export');
+      review.open(()=>xport.run());
+    }finally{
+      quick.busy=false;ui.syncDraft();
+    }
+  }
+};
+
+/* ============================================================
    介面
    ============================================================ */
+const TABS=['clips','subs','fx','export'];
+
 const ui={
+  pillGet:{},fxSrc:null,askedNoSubs:false,
+
   tab(name){
     state.tab=name;
-    ['clips','subs','export'].forEach(n=>{
+    TABS.forEach(n=>{
       $('panel-'+n).hidden=n!==name;
       $('tab-'+n).setAttribute('aria-selected',String(n===name));
     });
+    if(name!=='fx')bgm.stopAudition();
     ui.setDock();
-    if(name==='subs')ui.drawStylePreview();
+    if(name==='subs'){ui.renderSubs();ui.drawStylePreview();}
+    if(name==='fx')ui.syncFx();
     if(name==='export'){ui.fitStage();ui.syncModePills();}
   },
   pick(){$('filePick').click();},
@@ -1543,7 +3086,7 @@ const ui={
       'background:#28303e;border:1px solid #3a4456;color:#e6e9ef;'+
       'padding:10px 16px;border-radius:999px;font-size:13.5px;z-index:99;max-width:88vw;text-align:center';
     document.body.appendChild(d);
-    setTimeout(()=>d.remove(),2200);
+    setTimeout(()=>d.remove(),2600);
   },
 
   renderAll(){ui.renderClips();ui.renderSubs();ui.renderStrip();ui.setDock();},
@@ -1552,24 +3095,39 @@ const ui={
     const total=totalLen();
     $('totalLen').textContent=fmt(total);
     const track=$('track');
-    if(!state.clips.length){track.innerHTML='<div class="empty-track">還沒有影片</div>';$('subline').innerHTML='';return;}
+    if(!state.clips.length){track.innerHTML='<div class="empty-track">還沒有素材</div>';$('subline').innerHTML='';return;}
     track.innerHTML=state.clips.map(c=>{
       const p=total?clipLen(c)/total*100:0;
-      return `<div class="seg" style="flex:0 0 ${p}%" title="${esc(c.name)}"></div>`;
+      return `<div class="seg" style="flex:0 0 ${p}%${isPhoto(c)?';background:linear-gradient(180deg,#6f5f44,#4a3d2a)':''}" title="${esc(c.name)}"></div>`;
     }).join('');
-    $('subline').innerHTML=total?state.subs.map(s=>
+    $('subline').innerHTML=total?state.subs.filter(s=>!s.off).map(s=>
       `<div class="subtick" style="left:${clamp(s.start/total*100,0,100)}%;width:${clamp((s.end-s.start)/total*100,.4,100)}%"></div>`
     ).join(''):'';
   },
 
+  thumbStyle(c){return c&&c.thumb?` style="background-image:url(${c.thumb})"`:'';},
+  /* 成品時間 t 那一刻畫面上是哪一段素材，回傳它的縮圖 */
+  thumbAt(t,size){
+    let acc=0,hit=null;
+    for(const c of state.clips){
+      const len=clipLen(c);
+      if(t<acc+len-1e-6||c===state.clips[state.clips.length-1]){hit=c;break;}
+      acc+=len;
+    }
+    return `<div class="thumb ${size||''}"${ui.thumbStyle(hit)}></div>`;
+  },
+
   renderClips(){
-    const box=$('clipList');
-    $('clipEmpty').hidden=state.clips.length>0;
+    const box=$('clipList'),has=state.clips.length>0;
+    $('clipEmpty').hidden=has;
+    $('quickCard').hidden=!has;
+    $('clipTools').hidden=!has;
+    $('photoDurBox').hidden=!hasPhoto();
     box.innerHTML=state.clips.map((c,i)=>{
       const meta=ui.clipMeta(c);
       return `<div class="clip">
         <div class="clip-head">
-          <div class="ord">${i+1}</div>
+          <div class="thumb" id="th-${c.id}"${ui.thumbStyle(c)} onclick="clips.toggle(${c.id})"><span class="n">${i+1}</span></div>
           <div class="grow" onclick="clips.toggle(${c.id})">
             <div class="clip-name">${esc(c.name)}</div>
             <div class="clip-meta" id="meta-${c.id}">${meta}</div>
@@ -1583,13 +3141,30 @@ const ui={
     }).join('');
     state.clips.forEach(c=>{
       if(!c.open)return;
-      const a=$('ra-'+c.id),b=$('rb-'+c.id);
+      const a=$('ra-'+c.id),b=$('rb-'+c.id),d=$('rd-'+c.id);
       if(a){a.value=c.trimStart;a.oninput=e=>clips.setTrim(c.id,'start',+e.target.value);}
       if(b){b.value=c.trimEnd;b.oninput=e=>clips.setTrim(c.id,'end',+e.target.value);}
+      if(d){d.value=c.dur;d.oninput=e=>clips.setDur(c.id,+e.target.value);}
     });
   },
+  takenText(c){
+    if(!c.taken)return '不知道拍攝時間';
+    const d=new Date(c.taken),p=v=>String(v).padStart(2,'0');
+    return d.getFullYear()+'/'+p(d.getMonth()+1)+'/'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+  },
   clipBody(c){
+    const rm=`<button class="btn small danger" style="margin-left:auto" onclick="clips.remove(${c.id})">移除這${isPhoto(c)?'張':'段'}</button>`;
+    if(c.err)return `<div class="clip-body"><div class="row" style="margin-top:11px">${rm}</div></div>`;
     if(!c.ready)return `<div class="clip-body"><p class="muted" style="margin:11px 0 0">讀取中…</p></div>`;
+    if(isPhoto(c))return `<div class="clip-body">
+      <img src="${c.url}" alt="" style="width:100%;max-height:38vh;object-fit:contain;border-radius:9px;background:#000;margin-top:11px;display:block">
+      <label class="field" id="lab-d-${c.id}">顯示 ${c.dur.toFixed(1)} 秒</label>
+      <input type="range" id="rd-${c.id}" min="1" max="10" step="0.5">
+      <div class="row" style="gap:7px;margin-top:11px;flex-wrap:wrap">
+        <span class="muted">拍攝時間 ${ui.takenText(c)}</span>
+        ${rm}
+      </div>
+    </div>`;
     return `<div class="clip-body">
       <video id="pv-${c.id}" src="${c.url}" controls playsinline preload="metadata"></video>
       <label class="field" id="lab-s-${c.id}">起點 ${fmt(c.trimStart)}</label>
@@ -1600,7 +3175,7 @@ const ui={
         <button class="btn small" onclick="clips.fromPreview(${c.id},'start')">目前位置設為起點</button>
         <button class="btn small" onclick="clips.fromPreview(${c.id},'end')">設為終點</button>
         <button class="btn small" onclick="clips.resetTrim(${c.id})">還原</button>
-        <button class="btn small danger" style="margin-left:auto" onclick="clips.remove(${c.id})">移除這段</button>
+        ${rm}
       </div>
     </div>`;
   },
@@ -1608,12 +3183,14 @@ const ui={
   renderSubs(){
     const box=$('subList');
     $('subCount').textContent=state.subs.length+' 句';
+    ui.syncConfirm();
     if(!state.subs.length){
-      box.innerHTML='<p class="muted" style="margin:6px 0">還沒有字幕。可以自動聽打、匯入 SRT，或手動加一句。</p>';
+      box.innerHTML='<p class="muted" style="margin:6px 0">還沒有字幕。可以用上面的字幕草稿、影片聽打，匯入 SRT，或手動加一句。</p>';
       return;
     }
-    box.innerHTML=state.subs.map(s=>`<div class="sub">
+    box.innerHTML=state.subs.map(s=>`<div class="sub${s.off?' off':''}">
       <input type="checkbox" ${s.sel?'checked':''} onchange="subs.toggle(${s.id},this.checked)">
+      ${ui.thumbAt(s.start,'sm')}
       <div class="grow">
         <div class="t">
           <input type="number" step="0.1" value="${s.start.toFixed(1)}" style="width:72px;display:inline-block;padding:3px 6px;font-size:11.5px"
@@ -1621,6 +3198,7 @@ const ui={
           →
           <input type="number" step="0.1" value="${s.end.toFixed(1)}" style="width:72px;display:inline-block;padding:3px 6px;font-size:11.5px"
             onchange="subs.update(${s.id},'end',this.value);ui.renderSubs()">
+          ${s.off?'　已被裁掉':''}
         </div>
         <textarea class="txt" rows="1" oninput="subs.update(${s.id},'text',this.value);ui.autoGrow(this)" placeholder="字幕內容">${esc(s.text)}</textarea>
       </div>
@@ -1628,18 +3206,43 @@ const ui={
     box.querySelectorAll('.txt').forEach(ui.autoGrow);
   },
   autoGrow(el){el.style.height='auto';el.style.height=el.scrollHeight+'px';},
+  /* 字幕有沒有確認過，顯示在字幕頁上 */
+  syncConfirm(){
+    const chip=$('subState'),btn=$('subConfirmBtn');
+    if(!chip)return;
+    if(!state.subs.length){chip.className='chip';chip.textContent='沒有字幕';btn.hidden=true;return;}
+    btn.hidden=false;
+    if(state.subsOk){chip.className='chip ok';chip.textContent='已確認';btn.textContent='再看一次';}
+    else{chip.className='chip wait';chip.textContent='待確認';btn.textContent='逐句確認';}
+  },
+  syncDraft(){
+    const busy=draft.busy||quick.busy;
+    const b=$('draftBtn');
+    if(b){b.textContent=draft.busy?'停止':'產生字幕草稿';b.classList[draft.busy?'add':'remove']('danger');}
+    const q=$('quickBtn');
+    if(q){q.disabled=busy;q.textContent=busy?'處理中…':'產生草稿，確認字幕';}
+    const ai_=state.draftSrc==='ai';
+    $('aiBox').hidden=!ai_;
+    const hint=ai_
+      ?'把縮小的畫面傳給 Claude，照畫面內容寫字幕。要用你自己的 Anthropic API key。'
+      :'不連網。只知道拍攝時間，所以草稿只有日期和時段，內容要自己改寫。';
+    $('draftSrcHint').textContent=hint;
+    $('quickSrcHint').textContent=ai_&&!ai.key()?hint+'還沒填金鑰，請先到「字幕」頁填。':hint;
+  },
 
   clipMeta(c){
     if(c.err)return '<span style="color:var(--rec)">'+esc(c.err)+'</span>';
     if(!c.ready)return '讀取中…';
+    if(isPhoto(c))return '照片　'+c.dur.toFixed(1)+' 秒　'+c.w+'×'+c.h;
     const cut=(c.trimStart>0||c.trimEnd<c.dur-.05)?'　已裁切':'';
-    return fmt(clipLen(c))+'　'+c.w+'×'+c.h+cut;
+    return '影片　'+fmt(clipLen(c))+'　'+c.w+'×'+c.h+cut;
   },
   /* 只更新單一片段的數字，避免整個列表重畫害預覽影片重載 */
   syncClip(c){
     const m=$('meta-'+c.id);if(m)m.innerHTML=ui.clipMeta(c);
     const ls=$('lab-s-'+c.id);if(ls)ls.textContent='起點 '+fmt(c.trimStart);
     const le=$('lab-e-'+c.id);if(le)le.textContent='終點 '+fmt(c.trimEnd);
+    const ld=$('lab-d-'+c.id);if(ld)ld.textContent='顯示 '+c.dur.toFixed(1)+' 秒';
     const ra=$('ra-'+c.id);if(ra&&+ra.value!==c.trimStart)ra.value=c.trimStart;
     const rb=$('rb-'+c.id);if(rb&&+rb.value!==c.trimEnd)rb.value=c.trimEnd;
   },
@@ -1660,6 +3263,70 @@ const ui={
     drawSubtitle(ctx,'這是字幕看起來的樣子',W,H);
   },
 
+  /* ---------- 效果頁 ---------- */
+  volChanged(){
+    state.bgmVol=+$('bgmVol').value/100;
+    state.origVol=+$('origVol').value/100;
+    state.duck=$('duck').checked;
+    if(bgm.node)bgm.stopAudition();
+    ui.syncFx();ui.saveStyle();
+  },
+  syncFx(){
+    $('bgmVol').value=Math.round(state.bgmVol*100);
+    $('origVol').value=Math.round(state.origVol*100);
+    $('duck').checked=state.duck;
+    $('bgmVolVal').textContent=Math.round(state.bgmVol*100)+'%';
+    $('origVolVal').textContent=Math.round(state.origVol*100)+'%';
+    $('bgmInfo').textContent=state.bgm==='none'?'不加配樂。'
+      :state.bgm==='file'?(bgm.fileBuf?'使用你選的「'+bgm.fileName+'」，比影片短會自動循環。':'還沒選檔案。')
+      :'內建配樂「'+TRACKS[state.bgm].label+'」，會循環到影片結束，片頭淡入、片尾淡出。';
+    $('bgmFileBtn').textContent=bgm.fileBuf?'換一首自己的音樂':'選自己的音樂';
+    const note=$('fxNote');
+    if(state.mode==='fast'&&state.clips.length&&!hasPhoto()){
+      note.hidden=false;
+      note.innerHTML='目前的匯出方式是「快速接片」，不會重新編碼，所以這一頁的效果和配樂都不會套用。'
+        +'<br><button class="btn small" onclick="ui.useEncode()">改用重新編碼</button>';
+    }else note.hidden=true;
+    ui.drawFxPreview();
+  },
+  useEncode(){
+    state.mode=mb.supported()?'encode':'record';
+    ui.syncPills();ui.syncModePills();ui.syncFx();ui.saveStyle();
+  },
+  /* 用第一段素材的縮圖示範色調 */
+  drawFxPreview(){
+    const cv=$('fxPreview');if(!cv)return;
+    const {w:ow,h:oh}=engine.outSize();
+    const W=cv.width=640,H=cv.height=Math.round(640*oh/ow);
+    const ctx=cv.getContext('2d');
+    const paint=img=>{
+      const g=ctx.createLinearGradient(0,0,W,H);
+      g.addColorStop(0,'#3d6a8f');g.addColorStop(.5,'#c9a36a');g.addColorStop(1,'#7a4a3a');
+      ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+      if(img){
+        const s=Math.max(W/img.width,H/img.height);
+        ctx.drawImage(img,(W-img.width*s)/2,(H-img.height*s)/2,img.width*s,img.height*s);
+      }
+      fx.look(ctx,W,H);
+    };
+    const ph=state.clips.find(x=>x.ready&&isPhoto(x));
+    if(ph){
+      if(ui.fxSrc&&ui.fxSrc.id===ph.id){paint(ui.fxSrc.cv);return;}
+      paint(null);
+      photo.decode(ph.file,ph.url).then(img=>{
+        try{ui.fxSrc={id:ph.id,cv:photo.shrink(img,720)};}finally{if(img.close)img.close();}
+        if(state.tab==='fx')ui.drawFxPreview();
+      }).catch(()=>{});
+      return;
+    }
+    const c=state.clips.find(x=>x.thumb);
+    if(!c){paint(null);return;}
+    const img=new Image();
+    img.onload=()=>paint(img);
+    img.onerror=()=>paint(null);
+    img.src=c.thumb;
+  },
+
   progress(barId,p,record,t,total){
     if(barId)$(barId).style.width=clamp(p*100,0,100)+'%';
     $('expStatus').className='status';
@@ -1674,11 +3341,10 @@ const ui={
   },
   openLog(){const p=$('logPanel');if(p)p.open=true;},
   syncModePills(){
-    const box=$('modePills');
-    if(box)[...box.children].forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.v===state.mode)));
+    ui.syncPills();
     const hints={
-      fast:'不重新編碼，直接把原始資料接起來。幾秒鐘就好，畫質零損失。字幕不會燒進畫面，匯出後另外下載 SRT，上傳 YouTube 時一起加。裁切點會對齊最近的關鍵影格，可能差個一兩秒。',
-      encode:'重新編碼，字幕燒進畫面。比即時快好幾倍，實際倍數看手機。畫質會有一點損失，比例不同的素材也是在這個模式處理。',
+      fast:'只能接影片。不重新編碼，直接把原始資料接起來，幾秒鐘就好，畫質零損失。字幕不會燒進畫面，匯出後另外下載 SRT；轉場、色調、配樂也都不會套用。裁切點會對齊最近的關鍵影格，可能差個一兩秒。有照片時會自動改用重新編碼。',
+      encode:'重新編碼，字幕燒進畫面，照片動態、轉場、色調、配樂都在這個模式套用。比即時快好幾倍，實際倍數看手機。畫質會有一點損失。',
       record:'舊做法，會跟影片一樣長。只有在前兩種都不能用的時候才需要，例如瀏覽器沒有 WebCodecs。'
     };
     const h=$('modeHint');
@@ -1701,7 +3367,7 @@ const ui={
         <a class="btn primary grow" style="text-align:center;text-decoration:none;line-height:22px" href="${url}" download="${name}">下載到手機</a>
         <button class="btn grow" id="shareBtn">分享</button>
       </div>
-      ${(state.mode==='fast'&&state.subs.length)?'<button class="btn block" style="margin-top:8px" onclick="subs.exportSrt()">下載字幕 SRT（上傳 YouTube 時一起加）</button>':''}`;
+      ${(xport.ranMode==='fast'&&state.subs.length)?'<button class="btn block" style="margin-top:8px" onclick="subs.exportSrt()">下載字幕 SRT（上傳 YouTube 時一起加）</button>':''}`;
     const sb=$('shareBtn');
     const file=new File([blob],name,{type:blob.type});
     if(navigator.canShare&&navigator.canShare({files:[file]})){
@@ -1712,45 +3378,80 @@ const ui={
     box.scrollIntoView({behavior:'smooth',block:'nearest'});
   },
 
+  /* 按下匯出：字幕有變動、還沒確認過的話，先停在確認畫面 */
+  exportClick(){
+    if(xport.busy||engine.running)return;
+    if(!state.clips.length){ui.toast('先加入照片或影片');return;}
+    if(state.clips.some(c=>c.err)){ui.toast('有素材讀不到，先把它移除');return;}
+    if(state.clips.some(c=>!c.ready)){ui.toast('素材還在讀取，等一下');return;}
+    if(state.subs.length&&!state.subsOk){review.open(()=>xport.run());return;}
+    if(!state.subs.length&&hasPhoto()&&!ui.askedNoSubs){
+      ui.askedNoSubs=true;
+      if(confirm('還沒有字幕。要先自動寫一份字幕草稿嗎？\n（取消＝不加字幕，直接轉檔）')){
+        draft.run().then(ready=>{
+          if(ready&&state.subs.length)review.open(()=>xport.run());
+          else if(!ready)ui.toast('字幕草稿沒有產生，原因寫在「字幕」頁');
+        });
+        return;
+      }
+    }
+    xport.run();
+  },
+
   setDock(){
     const d=$('dock');
     if(engine.running||xport.busy){
       d.innerHTML=`<button class="btn danger block" onclick="xport.stop()">停止</button>`;
       return;
     }
+    const has=state.clips.length>0,dis=has?'':'disabled';
     if(state.tab==='clips'){
-      d.innerHTML=`<button class="btn primary block" onclick="ui.pick()">${state.clips.length?'再加影片':'選擇影片'}</button>`
-        +(state.clips.length?`<button class="btn" onclick="ui.tab('export')">預覽</button>`:'');
+      d.innerHTML=`<button class="btn primary block" onclick="ui.pick()">${has?'再加照片／影片':'選擇照片／影片'}</button>`
+        +(has?`<button class="btn" onclick="ui.tab('export')">預覽</button>`:'');
     }else if(state.tab==='subs'){
       d.innerHTML=`<button class="btn danger" onclick="subs.clear()">清空字幕</button>
                    <button class="btn primary grow" onclick="ui.tab('export')">去匯出</button>`;
+    }else if(state.tab==='fx'){
+      d.innerHTML=`<button class="btn primary block" onclick="ui.tab('export')">去預覽和匯出</button>`;
     }else{
-      const dis=state.clips.length?'':'disabled';
       d.innerHTML=`<button class="btn" ${dis} onclick="engine.run({record:false})">預覽</button>
-                   <button class="btn primary grow" ${dis} onclick="xport.run()">匯出影片</button>`;
+                   <button class="btn primary grow" ${dis} onclick="ui.exportClick()">匯出影片</button>`;
     }
   },
 
   pills(id,items,get,set){
     const box=$(id);
-    box.innerHTML=items.map(([v,l])=>`<button data-v="${v}" aria-pressed="${String(get()===v)}">${l}</button>`).join('');
+    ui.pillGet[id]=get;
+    box.innerHTML=items.map(([v,l])=>`<button data-v="${v}" aria-pressed="${String(String(get())===String(v))}">${l}</button>`).join('');
     box.onclick=e=>{
       const b=e.target.closest('button');if(!b)return;
       let v=b.dataset.v;
-      if(/^\d+$/.test(v))v=+v;
+      if(/^\d+(\.\d+)?$/.test(v))v=+v;
       set(v);
-      [...box.children].forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.v==String(get()))));
+      ui.syncPills();
     };
+  },
+  /* 程式改了設定之後，把所有選項按鈕的選取狀態對回來 */
+  syncPills(){
+    for(const id in ui.pillGet){
+      const box=$(id);if(!box||!box.children)continue;
+      const cur=String(ui.pillGet[id]());
+      [...box.children].forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.v===cur)));
+    }
   },
 
   saveStyle(){
     try{localStorage.setItem('vlog-stitch-style',JSON.stringify({
-      k:state.styleKey,p:state.subPos,m:state.sizeMul,r:state.res,o:state.ori,f:state.fit,x:state.mode,q:state.fps
+      k:state.styleKey,p:state.subPos,m:state.sizeMul,r:state.res,o:state.ori,f:state.fit,x:state.mode,q:state.fps,
+      pd:state.photoDur,mo:state.motion,tr:state.trans,lk:state.look,
+      bg:state.bgm,bv:state.bgmVol,ov:state.origVol,dk:state.duck,
+      ds:state.draftSrc,am:state.aiModel,t:fx.touched
     }));}catch(e){}
   },
   loadStyle(){
     try{
       const s=JSON.parse(localStorage.getItem('vlog-stitch-style')||'{}');
+      const has=(list,v)=>list.some(x=>x[0]===v);
       if(s.k&&STYLES[s.k])state.styleKey=s.k;
       if(s.p)state.subPos=s.p;
       if(s.m)state.sizeMul=s.m;
@@ -1759,6 +3460,18 @@ const ui={
       if(s.f)state.fit=s.f;
       if(s.x)state.mode=s.x;
       if(s.q!==undefined)state.fps=s.q;
+      if(s.pd>0)state.photoDur=s.pd;
+      if(has(MOTIONS,s.mo))state.motion=s.mo;
+      if(has(TRANSES,s.tr))state.trans=s.tr;
+      if(has(LOOKS,s.lk))state.look=s.lk;
+      if(s.bg==='none'||TRACKS[s.bg])state.bgm=s.bg;
+      if(s.bv>=0&&s.bv<=1)state.bgmVol=s.bv;
+      if(s.ov>=0&&s.ov<=1)state.origVol=s.ov;
+      if(typeof s.dk==='boolean')state.duck=s.dk;
+      if(s.ds==='ai'||s.ds==='offline')state.draftSrc=s.ds;
+      if(s.am)state.aiModel=s.am;
+      if(s.t&&typeof s.t==='object')fx.touched=s.t;
+      if(s.bg==='file')delete fx.touched.bgm;
     }catch(e){}
   }
 };
@@ -1782,8 +3495,28 @@ ui.pills('resPills',[[720,'720p'],[1080,'1080p']],
   ()=>state.res,v=>{state.res=v;ui.fitStage();ui.saveStyle();});
 ui.pills('oriPills',[['auto','跟著第一段'],['landscape','橫式'],['portrait','直式']],
   ()=>state.ori,v=>{state.ori=v;ui.fitStage();ui.saveStyle();});
-ui.pills('fitPills',[['contain','留黑邊'],['cover','裁切填滿']],
-  ()=>state.fit,v=>{state.fit=v;ui.saveStyle();});
+ui.pills('fitPills',[['contain','留黑邊'],['cover','裁切填滿'],['blur','模糊填滿']],
+  ()=>state.fit,v=>{state.fit=v;fx.touched.fit=true;ui.saveStyle();});
+
+ui.pills('photoDurPills',[[2,'2 秒'],[3,'3 秒'],[4,'4 秒'],[5,'5 秒']],
+  ()=>state.photoDur,v=>clips.setPhotoDur(v));
+
+/* 效果：使用者親手選過的項目記下來，之後自動預設就不會去動它 */
+const fxSet=k=>v=>{state[k]=v;fx.touched[k]=true;ui.syncFx();ui.saveStyle();};
+ui.pills('motionPills',MOTIONS,()=>state.motion,fxSet('motion'));
+ui.pills('transPills',TRANSES,()=>state.trans,fxSet('trans'));
+ui.pills('lookPills',LOOKS,()=>state.look,fxSet('look'));
+ui.pills('bgmPills',[['none','不加配樂'],...Object.entries(TRACKS).map(([k,t])=>[k,t.label]),['file','自己的音樂']],
+  ()=>state.bgm,v=>{
+    bgm.stopAudition();
+    if(v==='file'&&!bgm.fileBuf){bgm.pickFile();return;}
+    state.bgm=v;fx.touched.bgm=true;ui.syncFx();ui.saveStyle();
+  });
+
+const DRAFT_SRC=[['offline','離線（照拍攝時間）'],['ai','AI 看圖寫']];
+const srcSet=v=>{state.draftSrc=v;ui.syncDraft();ui.saveStyle();};
+ui.pills('draftSrcPills',DRAFT_SRC,()=>state.draftSrc,srcSet);
+ui.pills('quickSrcPills',DRAFT_SRC,()=>state.draftSrc,srcSet);
 
 $('sizeRange').value=Math.round(state.sizeMul*100);
 $('sizeVal').textContent=Math.round(state.sizeMul*100)+'%';
@@ -1791,11 +3524,15 @@ $('sizeVal').textContent=Math.round(state.sizeMul*100)+'%';
 $('filePick').addEventListener('change',e=>{
   clips.add([...e.target.files]);e.target.value='';
 });
+$('bgmPick').addEventListener('change',e=>{
+  const f=e.target.files[0];e.target.value='';
+  if(f)bgm.setFile(f);
+});
 $('srtPick').addEventListener('change',async e=>{
   const f=e.target.files[0];e.target.value='';if(!f)return;
   const list=await subs.parseSrt(await f.text());
   if(!list.length){ui.toast('這個檔案讀不到字幕');return;}
-  state.subs=state.subs.concat(list);subs.sort();
+  state.subs=state.subs.concat(list);subs.sort();subs.touch();
   ui.renderSubs();ui.renderStrip();ui.toast('匯入 '+list.length+' 句');
 });
 
@@ -1812,7 +3549,10 @@ if(!mb.supported()){
   ui.expStatus('這個瀏覽器沒有 WebCodecs，只能用即時錄製模式（匯出時間會跟影片一樣長）。','warn');
 }
 if($('verLine'))$('verLine').textContent=APP_VERSION;
+ai.restore();
 ui.syncModePills();
+ui.syncDraft();
+ui.syncFx();
 dbg.render();
 ui.renderAll();
 ui.drawStylePreview();

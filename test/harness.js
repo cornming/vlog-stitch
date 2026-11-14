@@ -17,9 +17,17 @@ const store={};
 const napiCanvas=require('@napi-rs/canvas').createCanvas(1080,1920);
 napiCanvas.style={};  // 讓瀏覽器程式碼設定 style 不會爆
 napiCanvas.setAttribute=()=>{};napiCanvas.addEventListener=()=>{};
+/* 程式自己建立的離屏畫布（照片工作圖、轉場留存的畫面、縮圖）也要是真的 canvas，
+   照片和轉場的畫素才驗得到 */
+function newCanvas(){
+  const c=require('@napi-rs/canvas').createCanvas(2,2);
+  c.style={};c.setAttribute=()=>{};c.addEventListener=()=>{};
+  c.toBlob=undefined;   // 讓縮圖走 toDataURL，不用模擬瀏覽器的 toBlob 回呼
+  return c;
+}
 global.document={getElementById:id=>{
     if(id==='stage')return napiCanvas;
-    return store[id]||(store[id]=mkEl(id));},createElement:t=>mkEl('n-'+t),
+    return store[id]||(store[id]=mkEl(id));},createElement:t=>t==='canvas'?newCanvas():mkEl('n-'+t),
   querySelector:()=>null,querySelectorAll:()=>[],body:mkEl('body'),addEventListener(){}};
 global.window={AudioContext:function(){},addEventListener(){}};
 global.window.MediaRecorder=function(){};global.window.MediaRecorder.isTypeSupported=()=>false;
@@ -34,7 +42,10 @@ global.HTMLCanvasElement=_napi.Canvas;
 global.OffscreenCanvas=_napi.Canvas;
 global.screen={width:1080,height:2400};
 global.navigator={userAgent:'Node test harness',hardwareConcurrency:8};
-global.localStorage={getItem:()=>null,setItem(){}};
+global.localStorage={getItem:()=>null,setItem(){},removeItem(){}};
+/* 照片解碼：瀏覽器用 createImageBitmap，這裡用 napi 的 loadImage 頂替 */
+global.createImageBitmap=async f=>require('@napi-rs/canvas').loadImage(Buffer.from(await f.arrayBuffer()));
+global.Image=class{set src(v){queueMicrotask(()=>{if(this.onerror)this.onerror();});}};
 global.requestAnimationFrame=()=>0;global.cancelAnimationFrame=()=>{};
 global.AudioBuffer=class AudioBuffer{
   constructor(o){this.numberOfChannels=o.numberOfChannels||1;this.length=o.length;
