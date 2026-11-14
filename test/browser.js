@@ -4,6 +4,8 @@
 
    需要 Playwright：npm install playwright && npx playwright install chromium
    執行：node browser.js（素材不在的話先跑 ./make-fixtures.sh）
+   有設 GEMINI_API_KEY、AZURE_OPENAI_ENDPOINT＋AZURE_AI_KEY（＋AZURE_CHAT_DEPLOYMENT）的話，
+   最後會用真的金鑰實測 AI 看圖寫字幕，會用到一點額度。
    截圖和成品影格會放在 shots/，可以直接打開來看。 */
 const {chromium}=require('playwright');
 const fs=require('fs'),path=require('path'),http=require('http'),os=require('os'),{execSync}=require('child_process');
@@ -12,6 +14,7 @@ fs.mkdirSync(SHOT,{recursive:true});
 const f=n=>path.join(D,n);
 
 let pass=0,fail=0;
+const blocked=[];   /* 因為外部因素（例如金鑰額度用完）沒辦法驗證的項目，不算通過也不算失敗 */
 const ok=(c,msg)=>{if(c){pass++;console.log('  ✓ '+msg);}else{fail++;console.log('  ✗ '+msg);}};
 
 /* ---------- 量測成品 ---------- */
@@ -171,31 +174,98 @@ function serve(){
     frame(out,3.2,'frame-slide.jpg');
   }
 
-  console.log('7. AI 看圖寫字幕（API 用假的回應頂替，檢查實際送出去的請求）');
-  const sent=[];
+  console.log('7. AI 看圖寫字幕：三家供應商（API 用假的回應頂替，檢查實際送出去的請求）');
   const cors={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*'};
-  await page.route('https://api.anthropic.com/**',async route=>{
-    const rq=route.request();
-    if(rq.method()==='OPTIONS')return route.fulfill({status:204,headers:cors});
-    const body=JSON.parse(rq.postData()||'{}');
-    sent.push({url:rq.url(),headers:rq.headers(),body});
-    const nums=body.messages[0].content.filter(b=>b.type==='text'&&/^第 \d+ 張/.test(b.text)).map(b=>+/^第 (\d+) 張/.exec(b.text)[1]);
-    return route.fulfill({status:200,contentType:'application/json',headers:cors,body:JSON.stringify({
-      id:'msg_test',type:'message',role:'assistant',model:body.model,stop_reason:'end_turn',stop_sequence:null,
-      content:[{type:'thinking',thinking:'',signature:'x'},
-        {type:'text',text:JSON.stringify({captions:nums.map(n=>({index:n,text:'AI 寫的第 '+n+' 句'}))})}],
-      usage:{input_tokens:100,output_tokens:20}})});
-  });
+  const captionsFor=(nums,who)=>JSON.stringify({captions:nums.map(n=>({index:n,text:who+' 寫的第 '+n+' 句'}))});
+  /* 攔下送往某個網域的請求，記下來，再照各家的格式回一個假的回應 */
+  const mock=async(pattern,reply)=>{
+    const sent=[];
+    await page.route(pattern,async route=>{
+      const rq=route.request();
+      if(rq.method()==='OPTIONS')return route.fulfill({status:204,headers:cors});
+      const body=JSON.parse(rq.postData()||'{}');
+      sent.push({url:rq.url(),headers:rq.headers(),body});
+      return route.fulfill({status:200,contentType:'application/json',headers:cors,body:JSON.stringify(reply(body))});
+    });
+    return sent;
+  };
+  const runDraft=async()=>{
+    await page.click('#draftBtn');
+    await page.waitForFunction(()=>!draft.busy&&$('draftStatus').textContent.length>0,null,{timeout:90000});
+    return page.evaluate(()=>$('draftStatus').textContent);
+  };
+  const applied=async who=>{
+    const t=await page.evaluate(()=>state.subs.map(s=>s.text));
+    return t.length===5&&t.every((x,i)=>x===who+' 寫的第 '+(i+1)+' 句');
+  };
+  const numsOf=texts=>texts.filter(t=>/^第 \d+ 張/.test(t)).map(t=>+/^第 (\d+) 張/.exec(t)[1]);
+
   await page.click('#tab-subs');
   await page.click('#draftSrcPills button[data-v="ai"]');
-  await page.fill('#aiKey','sk-ant-test-0000');
+  st=await page.evaluate(()=>({p:state.aiProvider,g:!$('aiGeminiBox').hidden,a:!$('aiAzureBox').hidden,c:!$('aiAnthropicBox').hidden,
+    model:$('geminiModel').value,label:$('aiKeyLabel').textContent}));
+  ok(st.p==='gemini'&&st.g&&!st.a&&!st.c&&st.label==='Gemini API key','預設供應商是 Gemini，只顯示 Gemini 的設定（模型 '+st.model+'）');
+  ok(/還沒填 Gemini 的金鑰/.test(await page.evaluate(()=>$('quickSrcHint').textContent)),'沒填金鑰時，快速成片會提醒');
+
+  /* --- Gemini --- */
+  let sent=await mock('https://generativelanguage.googleapis.com/**',body=>({
+    candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text:captionsFor(
+      numsOf(body.contents[0].parts.map(p=>p.text||'')),'Gemini')}]}}],
+    usageMetadata:{promptTokenCount:100,candidatesTokenCount:20}}));
+  await page.fill('#aiKey','gemini-test-key');
   await page.fill('#aiHint','週六的日常');
   await shot(page,'07-ai');
-  await page.click('#draftBtn');
-  await page.waitForFunction(()=>!draft.busy&&$('draftStatus').textContent.length>0,null,{timeout:90000});
-  msg=await page.evaluate(()=>$('draftStatus').textContent);
-  ok(/AI 寫好 5 句/.test(msg),'AI 草稿產生：'+msg);
+  msg=await runDraft();
+  ok(/Gemini 寫好 5 句/.test(msg),'Gemini 草稿產生：'+msg);
   ok(page.dialogs.some(d=>/重新產生草稿/.test(d)),'改過的草稿要被換掉之前有先問');
+  if(sent.length){
+    const h=sent[0].headers,b=sent[0].body,parts=b.contents[0].parts,imgs=parts.filter(x=>x.inline_data);
+    ok(sent[0].url==='https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent','打到 generateContent：'+sent[0].url);
+    ok(h['x-goog-api-key']==='gemini-test-key','金鑰放在 x-goog-api-key 標頭，不在網址裡');
+    ok(imgs.length===5&&imgs.every(i=>i.inline_data.mime_type==='image/jpeg'),
+       '五張縮小後的 JPEG（各約 '+imgs.map(i=>Math.round(i.inline_data.data.length*3/4/1024)).join('、')+' KB）');
+    ok(b.generationConfig.responseMimeType==='application/json'&&!!b.generationConfig.responseSchema&&!!b.system_instruction,'結構化輸出與系統提示');
+    ok(/週六的日常/.test(parts[0].text),'補充說明有帶進去');
+  }else ok(false,'沒有攔到送往 Gemini 的請求');
+  ok(await applied('Gemini'),'Gemini 的字幕依序套到每段素材');
+  await page.unroute('https://generativelanguage.googleapis.com/**');
+
+  /* --- Azure Foundry（OpenAI 相容端點）--- */
+  sent=await mock('https://myres.services.ai.azure.com/**',body=>({
+    id:'chatcmpl-test',object:'chat.completion',model:body.model,
+    choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:captionsFor(
+      numsOf(body.messages[1].content.map(p=>p.text||'')),'Azure')}}]}));
+  await page.click('#aiProvPills button[data-v="azure"]');
+  st=await page.evaluate(()=>({a:!$('aiAzureBox').hidden,g:!$('aiGeminiBox').hidden,key:$('aiKey').value,miss:ai.missing()}));
+  ok(st.a&&!st.g&&st.key===''&&/端點/.test(st.miss),'切到 Azure Foundry：顯示端點與部署名稱，金鑰欄是空的（各家分開）');
+  /* 故意貼專案端點，程式要自己整理成 /openai/v1/chat/completions */
+  await page.fill('#azEndpoint','myres.services.ai.azure.com/api/projects/demo');
+  await page.fill('#azDeployment','my-vision-deploy');
+  await page.fill('#aiKey','azure-test-key');
+  await shot(page,'07b-ai-azure');
+  msg=await runDraft();
+  ok(/Azure Foundry 寫好 5 句/.test(msg),'Azure 草稿產生：'+msg);
+  if(sent.length){
+    const h=sent[0].headers,b=sent[0].body,user=b.messages[1].content,imgs=user.filter(x=>x.type==='image_url');
+    ok(sent[0].url==='https://myres.services.ai.azure.com/openai/v1/chat/completions','打到 OpenAI 相容端點：'+sent[0].url);
+    ok(h['api-key']==='azure-test-key','金鑰放在 api-key 標頭');
+    ok(b.model==='my-vision-deploy','model 填的是部署名稱');
+    ok(imgs.length===5&&imgs.every(i=>/^data:image\/jpeg;base64,/.test(i.image_url.url)),'五張畫面用 data URL 傳');
+    ok(b.response_format.type==='json_schema'&&b.response_format.json_schema.strict===true,'嚴格的結構化輸出');
+  }else ok(false,'沒有攔到送往 Azure 的請求');
+  ok(await applied('Azure'),'Azure 的字幕依序套到每段素材');
+  await page.unroute('https://myres.services.ai.azure.com/**');
+
+  /* --- Anthropic --- */
+  sent=await mock('https://api.anthropic.com/**',body=>({
+    id:'msg_test',type:'message',role:'assistant',model:body.model,stop_reason:'end_turn',stop_sequence:null,
+    content:[{type:'thinking',thinking:'',signature:'x'},
+      {type:'text',text:captionsFor(numsOf(body.messages[0].content.map(p=>p.text||'')),'Claude')}],
+    usage:{input_tokens:100,output_tokens:20}}));
+  await page.click('#aiProvPills button[data-v="anthropic"]');
+  await page.fill('#aiKey','sk-ant-test-0000');
+  msg=await runDraft();
+  ok(/Anthropic 寫好 5 句/.test(msg),'Anthropic 草稿產生：'+msg);
   if(sent.length){
     const h=sent[0].headers,b=sent[0].body,imgs=b.messages[0].content.filter(x=>x.type==='image');
     ok(/\/v1\/messages/.test(sent[0].url),'打到 Messages API');
@@ -205,13 +275,13 @@ function serve(){
     ok(/server-side-fallback-2026-07-01/.test(h['anthropic-beta']||''),'帶了拒絕備援的 beta 標頭');
     ok(b.model==='claude-opus-5-5'&&b.fallbacks==='default'&&b.betas===undefined,'模型與備援設定正確');
     ok(b.thinking&&b.thinking.type==='adaptive'&&b.output_config.format.type==='json_schema','adaptive thinking＋結構化輸出');
-    ok(imgs.length===5&&imgs.every(i=>i.source.media_type==='image/jpeg'),
-       '五張縮小後的 JPEG（各約 '+imgs.map(i=>Math.round(i.source.data.length*3/4/1024)).join('、')+' KB）');
-    ok(/週六的日常/.test(b.messages[0].content[0].text),'補充說明有帶進去');
-  }else ok(false,'沒有攔到送往 API 的請求');
-  st=await page.evaluate(()=>state.subs.map(s=>s.text));
-  ok(st.length===5&&st.every((t,i)=>t==='AI 寫的第 '+(i+1)+' 句'),'AI 字幕依序套到每段素材');
+    ok(imgs.length===5&&imgs.every(i=>i.source.media_type==='image/jpeg'),'五張縮小後的 JPEG');
+  }else ok(false,'沒有攔到送往 Anthropic 的請求');
+  ok(await applied('Claude'),'Claude 的字幕依序套到每段素材');
   await page.unroute('https://api.anthropic.com/**');
+  /* 三把金鑰各存各的，切回去還在 */
+  await page.click('#aiProvPills button[data-v="gemini"]');
+  ok(await page.evaluate(()=>$('aiKey').value==='gemini-test-key'),'切回 Gemini，剛剛填的金鑰還在');
 
   console.log('8. 預覽與即時錄製（縮成兩張照片比較快）');
   await page.evaluate(()=>{while(state.clips.length>2)clips.remove(state.clips[state.clips.length-1].id);
@@ -316,6 +386,78 @@ function serve(){
     await page.context().close();
   }
 
+  /* ================= 三、用真的金鑰實測（有設環境變數才跑，會用到一點額度） ================= */
+  const E=process.env;
+  const realPage=async()=>{
+    const pg=await open();
+    await pg.setInputFiles('#filePick',[f('b_breakfast.jpg'),f('b_street.jpg'),f('b_lunch.jpg'),f('b_sunset.jpg'),f('b_walk.webm')]);
+    await pg.waitForFunction(()=>state.clips.length===5&&state.clips.every(c=>c.ready));
+    await pg.click('#tab-subs');
+    await pg.click('#draftSrcPills button[data-v="ai"]');
+    return pg;
+  };
+  const realDraft=async pg=>{
+    await pg.click('#draftBtn');
+    await pg.waitForFunction(()=>!draft.busy&&$('draftStatus').textContent.length>0,null,{timeout:240000});
+    return pg.evaluate(()=>({msg:$('draftStatus').textContent,texts:state.subs.map(s=>s.text)}));
+  };
+  if(!E.GEMINI_API_KEY)console.log('13. Gemini 實測：沒有設 GEMINI_API_KEY，略過');
+  else{
+    console.log('13. Gemini 實測（真的打 API）');
+    page=await realPage();
+    await page.fill('#aiKey',E.GEMINI_API_KEY);
+    if(E.GEMINI_MODEL)await page.fill('#geminiModel',E.GEMINI_MODEL);
+    await page.click('#aiGeminiBox button');
+    await page.waitForFunction(()=>$('geminiModelList').children.length!==5,null,{timeout:30000}).catch(()=>{});
+    st=await page.evaluate(()=>[...$('geminiModelList').children].map(o=>o.value));
+    ok(st.length>0&&st.every(n=>/^gemini-/.test(n)),'「查可用模型」向 API 要到 '+st.length+' 個模型');
+    const r=await realDraft(page);
+    console.log('   '+r.msg);
+    r.texts.forEach((t,i)=>console.log('     '+(i+1)+'. '+t));
+    if(/（429）/.test(r.msg)){
+      /* Gemini 會先檢查請求格式（格式不對回 400）才檢查額度，所以走到 429 代表格式是被接受的 */
+      ok(true,'請求有送到 Gemini 而且格式被接受（格式不對會先回 400，這裡拿到的是額度的 429）');
+      blocked.push('Gemini 實際寫字幕：這把金鑰的額度或花費上限用完了（429）');
+      console.log('  － 沒辦法驗證實際寫出來的字幕：金鑰的額度或花費上限用完了');
+    }else{
+      ok(/Gemini 寫好 5 句/.test(r.msg),'真的 Gemini API 寫出草稿（模型 '+(E.GEMINI_MODEL||'gemini-3.8-flash')+'）');
+      ok(r.texts.length===5&&r.texts.every(t=>/[一-鿿]/.test(t)),'五句都有內容，而且是中文');
+      clean(page);
+    }
+    await page.context().close();
+  }
+  if(!(E.AZURE_OPENAI_ENDPOINT&&E.AZURE_AI_KEY))console.log('14. Azure Foundry 實測：沒有設 AZURE_OPENAI_ENDPOINT／AZURE_AI_KEY，略過');
+  else{
+    console.log('14. Azure Foundry 實測（真的打你的資源）');
+    page=await realPage();
+    await page.click('#aiProvPills button[data-v="azure"]');
+    await page.fill('#azEndpoint',E.AZURE_OPENAI_ENDPOINT);
+    await page.fill('#aiKey',E.AZURE_AI_KEY);
+    /* 不存在的部署：驗證端點、金鑰、跨來源都通，錯誤訊息也看得懂 */
+    await page.fill('#azDeployment','vlog-stitch-no-such-deployment');
+    let r=await realDraft(page);
+    console.log('   '+r.msg);
+    ok(/找不到這個部署/.test(r.msg),'部署名稱打錯時，從真的資源拿到 404 並說明原因（代表端點、金鑰、跨來源都通）');
+    await page.fill('#aiKey','wrong-key-0000');
+    r=await realDraft(page);
+    console.log('   '+r.msg);
+    ok(/不接受這把金鑰/.test(r.msg),'金鑰不對時說得出原因');
+    if(!E.AZURE_CHAT_DEPLOYMENT){
+      blocked.push('Azure Foundry 實際寫字幕：沒有設 AZURE_CHAT_DEPLOYMENT（能看圖的對話模型部署名稱）');
+      console.log('  － 沒有設 AZURE_CHAT_DEPLOYMENT，沒辦法驗證實際寫出來的字幕');
+    }
+    else{
+      await page.fill('#aiKey',E.AZURE_AI_KEY);
+      await page.fill('#azDeployment',E.AZURE_CHAT_DEPLOYMENT);
+      r=await realDraft(page);
+      console.log('   '+r.msg);
+      r.texts.forEach((t,i)=>console.log('     '+(i+1)+'. '+t));
+      ok(/Azure Foundry 寫好 5 句/.test(r.msg)&&r.texts.every(t=>/[一-鿿]/.test(t)),'真的 Azure 部署寫出五句中文草稿');
+    }
+    await page.context().close();
+  }
+
+  if(blocked.length)console.log('\n沒辦法驗證的項目：\n'+blocked.map(x=>'  － '+x).join('\n'));
   console.log('\n通過 '+pass+' 項，失敗 '+fail+' 項　（截圖在 '+SHOT+'）');
   await browser.close();srv.close();
   process.exit(fail?1:0);

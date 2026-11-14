@@ -312,6 +312,66 @@ function exifJpeg(dateStr,le){
     ok(threw,'模型拒絕時要丟出錯誤，不能當成空字幕');
   });
 
+  const throws=fn=>{try{fn();}catch(e){return e.message;}return '';};
+  const two=[{n:1,label:'第 1 張｜照片',data:'AAAA'},{n:2,label:'第 2 張｜照片',data:'BBBB'}];
+
+  unit('AI 字幕：預設供應商與缺少的設定',()=>{
+    ok(state.aiProvider==='gemini','預設供應商應該是 Gemini，實際 '+state.aiProvider);
+    ai.keys={gemini:'',azure:'',anthropic:''};
+    ok(/Gemini 的金鑰/.test(ai.missing()),'Gemini 沒填金鑰要說得出來：'+ai.missing());
+    ai.keys.gemini='g-key';
+    ok(ai.missing()===''&&ai.key()==='g-key','Gemini 填了金鑰就齊了');
+    state.aiProvider='azure';state.azureEndpoint='';state.azureDeployment='';
+    ok(/端點/.test(ai.missing()),'Azure 要先填端點');
+    state.azureEndpoint='https://res.services.ai.azure.com';
+    ok(/部署名稱/.test(ai.missing()),'Azure 要填部署名稱');
+    state.azureDeployment='my-gpt';
+    ok(/Azure Foundry 的金鑰/.test(ai.missing()),'Azure 要填金鑰（各家金鑰分開存）');
+    ai.keys.azure='a-key';
+    ok(ai.missing()===''&&ai.key()==='a-key','Azure 三項都填了就齊了');
+    state.aiProvider='gemini';
+  });
+
+  unit('AI 字幕：Gemini 的請求與回應',()=>{
+    state.geminiModel='models/gemini-3.8-flash';
+    ok(ai.geminiUrl()==='https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent','網址：'+ai.geminiUrl());
+    state.geminiModel='gemini-3.8-flash';
+    const q=ai.geminiRequest(two,[{n:0,text:'前一句'}],'去宜蘭',2),parts=q.contents[0].parts;
+    ok(q.system_instruction.parts[0].text===AI_SYSTEM,'系統提示放在 system_instruction');
+    ok(parts.filter(p=>p.inline_data).length===2&&parts.find(p=>p.inline_data).inline_data.mime_type==='image/jpeg'
+       &&parts.find(p=>p.inline_data).inline_data.data==='AAAA','每張畫面一個 inline_data');
+    ok(/去宜蘭/.test(parts[0].text)&&/前一句/.test(parts[0].text),'補充說明和前面寫好的字幕要帶進去');
+    ok(q.generationConfig.responseMimeType==='application/json'&&q.generationConfig.responseSchema.type==='OBJECT','要用結構化輸出');
+    const got=ai.geminiParse({candidates:[{finishReason:'STOP',content:{role:'model',parts:[
+      {thought:true,text:'（思考過程）'},{text:'{"captions":[{"index":1,"text":"早餐吃蛋餅"},'},{text:'{"index":2,"text":" 出門囉 "}]}'}]}}]});
+    ok(got.get(1)==='早餐吃蛋餅'&&got.get(2)==='出門囉','回應解析（分段的文字要接起來，思考內容要略過）');
+    ok(/擋下/.test(throws(()=>ai.geminiParse({promptFeedback:{blockReason:'SAFETY'}}))),'被擋下時要報錯');
+    ok(/截斷/.test(throws(()=>ai.geminiParse({candidates:[{finishReason:'MAX_TOKENS',content:{parts:[{text:'{"cap'}]}}]}))),'被截斷時要報錯');
+    ok(/沒有寫出字幕/.test(throws(()=>ai.geminiParse({candidates:[{finishReason:'SAFETY'}]}))),'沒有內容時要報錯，不能當成空字幕');
+  });
+
+  unit('AI 字幕：Azure Foundry 的端點、請求與回應',()=>{
+    const want='https://res.services.ai.azure.com/openai/v1/chat/completions';
+    for(const raw of ['https://res.services.ai.azure.com','https://res.services.ai.azure.com/','res.services.ai.azure.com',
+        'https://res.services.ai.azure.com/api/projects/demo','https://res.services.ai.azure.com/openai/v1/','res'])
+      ok(ai.azureUrl(raw)===want,'端點「'+raw+'」整理後應該是 '+want+'，實際 '+ai.azureUrl(raw));
+    ok(ai.azureUrl('https://res.openai.azure.com/')==='https://res.openai.azure.com/openai/v1/chat/completions','openai.azure.com 的端點也接受');
+    ok(/https/.test(throws(()=>ai.azureUrl('http://res.services.ai.azure.com'))),'不是 https 要擋下來');
+    ok(/還沒填/.test(throws(()=>ai.azureUrl('  '))),'空的端點要擋下來');
+    state.azureDeployment=' my-gpt ';
+    const q=ai.azureRequest(two,[],'去宜蘭',2),user=q.messages[1].content;
+    ok(q.model==='my-gpt','model 填部署名稱');
+    ok(q.messages[0].role==='system'&&q.messages[0].content===AI_SYSTEM,'系統提示');
+    ok(user.filter(p=>p.type==='image_url').length===2&&user.find(p=>p.type==='image_url').image_url.url==='data:image/jpeg;base64,AAAA','每張畫面一個 image_url（data URL）');
+    ok(q.response_format.type==='json_schema'&&q.response_format.json_schema.strict===true
+       &&q.response_format.json_schema.schema.additionalProperties===false,'要用嚴格的結構化輸出');
+    const got=ai.azureParse({choices:[{finish_reason:'stop',message:{role:'assistant',content:'{"captions":[{"index":1,"text":"早餐吃蛋餅"},{"index":2,"text":"出門囉"}]}'}}]});
+    ok(got.get(1)==='早餐吃蛋餅'&&got.get(2)==='出門囉','回應解析');
+    ok(/內容篩選/.test(throws(()=>ai.azureParse({choices:[{finish_reason:'content_filter',message:{}}]}))),'被內容篩選擋下要報錯');
+    ok(/拒絕/.test(throws(()=>ai.azureParse({choices:[{finish_reason:'stop',message:{refusal:'不行'}}]}))),'模型拒絕要報錯');
+    ok(/截斷/.test(throws(()=>ai.azureParse({choices:[{finish_reason:'length',message:{content:'{'}}]}))),'被截斷要報錯');
+  });
+
   unit('內建配樂：三首都算得出來、不爆音、長度是整數小節',()=>{
     for(const k of Object.keys(TRACKS)){
       const p=synth.render(k,48000);
